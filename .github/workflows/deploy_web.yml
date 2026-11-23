@@ -1,0 +1,55 @@
+name: 🌐 Desplegar Kpital Web en GitHub Pages
+
+on:
+  push:
+    branches: [ production ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  deploy-web:
+    name: Build & Deploy Flutter Web
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: 🐦 Configurar Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 📦 Instalar dependencias
+        run: |
+          cd frontend
+          flutter pub get
+
+      - name: 🚀 Compilar Flutter Web para GitHub Pages
+        run: |
+          cd frontend
+          flutter build web --release --base-href "/Kpital/"
+
+      - name: 📄 Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: 📤 Subir artefacto web
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'frontend/build/web'
+
+      - name: 🌐 Desplegar a GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

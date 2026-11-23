@@ -63,7 +63,10 @@ class SeasonalTrendResult {
 }
 
 class PricingAIService {
-  static const String _backendBaseUrl = 'http://127.0.0.1:8000';
+  static const String _backendBaseUrl = String.fromEnvironment(
+    'BACKEND_URL',
+    defaultValue: 'http://127.0.0.1:8000',
+  );
 
   /// CU-6.1 & CU-6.2: Evaluador de Compra y Recomendador de Precios con IA
   static Future<PricingAIResult> evaluateAndRecommendPricing({
