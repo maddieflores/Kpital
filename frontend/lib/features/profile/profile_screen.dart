@@ -6,138 +6,73 @@ import '../../core/theme/theme_provider.dart';
 import '../ads/providers/ads_provider.dart';
 import '../appearance/screens/appearance_screen.dart';
 import '../auth/providers/auth_provider.dart';
+import '../auth/login_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  void _showSecurityModal(BuildContext context, AuthProvider authProv) {
-    final user = authProv.currentUser;
-    final passCtrl = TextEditingController(text: authProv.ownerPassword);
-    bool obscure = true;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setMState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: 24,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              child: Column(
+  Future<void> _showSecurityModal(BuildContext context, AuthProvider auth) async {
+    final current = TextEditingController();
+    final replacement = TextEditingController();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          bool saving = false;
+          String? error;
+          return StatefulBuilder(builder: (dialogContext, refresh) {
+            return AlertDialog(
+              title: const Text('Cambiar contraseña'),
+              content: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF8261B8).withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.verified_user_rounded, color: Color(0xFF8261B8)),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Seguridad y Credenciales",
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              "Cuenta Propietaria (Owner)",
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.alternate_email, color: Color(0xFF8261B8)),
-                    title: const Text("Usuario Owner"),
-                    subtitle: Text("@${user.username}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.mail_outline, color: Color(0xFF8261B8)),
-                    title: const Text("Correo Real de Recuperación"),
-                    subtitle: Text(user.email, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.phone_iphone_outlined, color: Color(0xFF8261B8)),
-                    title: const Text("Teléfono de Notificaciones y Códigos"),
-                    subtitle: Text(user.phoneNumber, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text("Contraseña de Acceso Owner:", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                  const SizedBox(height: 6),
                   TextField(
-                    controller: passCtrl,
-                    obscureText: obscure,
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFFFAFAFC),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                      suffixIcon: IconButton(
-                        icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                        onPressed: () => setMState(() => obscure = !obscure),
-                      ),
-                    ),
+                    controller: current,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Contraseña actual'),
                   ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF8261B8),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      onPressed: () async {
-                        if (passCtrl.text.trim().isNotEmpty) {
-                          await authProv.updatePassword(passCtrl.text.trim());
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              backgroundColor: Color(0xFF10B981),
-                              content: Text("Contraseña de cuenta Owner actualizada correctamente."),
-                            ),
-                          );
-                        }
-                      },
-                      child: const Text("Guardar Nueva Contraseña", style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
+                  TextField(
+                    controller: replacement,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Nueva contraseña', helperText: 'Al menos 12 caracteres'),
                   ),
+                  if (error != null) Text(error!),
                 ],
               ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: saving ? null : () async {
+                    if (current.text.isEmpty || replacement.text.length < 12) {
+                      refresh(() => error = 'Completa ambos campos.');
+                      return;
+                    }
+                    refresh(() => saving = true);
+                    final ok = await auth.updatePassword(current.text, replacement.text);
+                    if (!dialogContext.mounted) return;
+                    if (ok) {
+                      Navigator.pop(dialogContext);
+                    } else {
+                      refresh(() {
+                        saving = false;
+                        error = auth.errorMessage ?? 'Vuelve a iniciar sesión.';
+                      });
+                    }
+                  },
+                  child: const Text('Guardar'),
+                ),
+              ],
             );
-          },
-        );
-      },
-    );
+          });
+        },
+      );
+    } finally {
+      current.dispose();
+      replacement.dispose();
+    }
   }
 
   @override
@@ -359,13 +294,24 @@ class ProfileScreen extends StatelessWidget {
                   trailing: const Text("Bolivianos (Bs)", style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 Divider(height: 1, indent: 56, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
-                ListTile(
-                  leading: const Icon(Icons.security_outlined),
-                  title: const Text("Seguridad y Acceso"),
-                  subtitle: Text("Cuenta Owner @${user.username} • Ver credenciales"),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                  onTap: () => _showSecurityModal(context, authProv),
-                ),
+                  if (authProv.isLoggedIn)
+                    ListTile(
+                      leading: const Icon(Icons.security_outlined),
+                      title: const Text('Cambiar contraseña'),
+                      onTap: () => _showSecurityModal(context, authProv),
+                    ),
+                  ListTile(
+                    leading: Icon(authProv.isLoggedIn ? Icons.logout : Icons.login),
+                    title: Text(authProv.isLoggedIn ? 'Cerrar sesión' : 'Iniciar sesión'),
+                    onTap: () async {
+                      if (authProv.isLoggedIn) await authProv.logout();
+                      if (!context.mounted) return;
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        (route) => false,
+                      );
+                    },
+                  ),
               ],
             ),
           ),
@@ -506,7 +452,7 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   activeColor: Colors.amber,
                   value: adsProv.isCreatorMode,
-                  onChanged: (val) {
+                  onChanged: !authProv.isOwner ? null : (val) {
                     adsProv.setCreatorMode(val);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
