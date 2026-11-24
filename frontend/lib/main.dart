@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/services/notification_service.dart';
@@ -30,8 +31,10 @@ void main() async {
   
   // Inicializar Notificaciones Locales (Inciso A) y Firebase Push (Inciso B)
   try {
-    await NotificationService().initializeLocalNotifications();
-    await NotificationService().initializeFirebase();
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      await NotificationService().initializeLocalNotifications();
+      await NotificationService().initializeFirebase();
+    }
   } catch (e) {
     debugPrint("Error inicializando notificaciones: $e");
   }
@@ -45,7 +48,10 @@ void main() async {
         ChangeNotifierProvider(create: (_) => TransactionsProvider()),
         ChangeNotifierProvider(create: (_) => DebtsProvider()),
         ChangeNotifierProvider(create: (_) => InventoryProvider()),
-        ChangeNotifierProvider(create: (_) => AdsProvider()),
+        ChangeNotifierProxyProvider<AuthProvider, AdsProvider>(
+          create: (_) => AdsProvider(),
+          update: (_, auth, ads) => ads!..assignOwner(auth.isOwner),
+        ),
       ],
       child: const KpitalApp(),
     ),
