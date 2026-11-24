@@ -1,38 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/rewarded_ad_dialog.dart';
 
 class AdsProvider extends ChangeNotifier {
-  static const String _kCreatorModeKey = 'kpital_ads_creator_mode';
-
   // ID oficiales de prueba de Google AdMob
   final String adMobAppId = 'ca-app-pub-3940256099942544~3347511713';
   final String bannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111';
   final String rewardedAdUnitId = 'ca-app-pub-3940256099942544/5224354917';
 
-  bool _isCreatorMode = true; // Por defecto modo Creador (Owner) activo para el dueño
-  bool _isInitialized = false;
+  bool _isOwner = false;
+  bool _isCreatorMode = false;
 
-  bool get isCreatorMode => _isCreatorMode;
-  bool get shouldShowBannerAds => !_isCreatorMode;
-  bool get isInitialized => _isInitialized;
+  bool get isCreatorMode => _isOwner && _isCreatorMode;
+  bool get shouldShowBannerAds => !isCreatorMode;
+  bool get isInitialized => true;
 
-  AdsProvider() {
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    _isCreatorMode = prefs.getBool(_kCreatorModeKey) ?? true;
-    _isInitialized = true;
+  void assignOwner(bool isOwner) {
+    if (_isOwner == isOwner) return;
+    _isOwner = isOwner;
+    _isCreatorMode = isOwner;
     notifyListeners();
   }
 
-  Future<void> setCreatorMode(bool value) async {
+  void setCreatorMode(bool value) {
+    if (!_isOwner) return;
     _isCreatorMode = value;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kCreatorModeKey, value);
   }
 
   /// CU-7.2: Rewarded Ad para IA (15 segundos para desbloquear análisis en cuenta gratis, bypass para Owner)
@@ -40,7 +32,7 @@ class AdsProvider extends ChangeNotifier {
     BuildContext context, {
     required VoidCallback onRewardGranted,
   }) async {
-    if (_isCreatorMode) {
+    if (isCreatorMode) {
       // CU-7.3: Modo Creador desactiva anuncios automáticamente
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
