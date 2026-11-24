@@ -1,12 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 
-/// Servicio Central de Notificaciones (Locales + Push Remotas FCM + Pasarela de Email/WhatsApp)
+/// Servicio Central de Notificaciones (Locales y push remotas FCM)
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
@@ -22,11 +19,6 @@ class NotificationService {
   String? get fcmToken => _fcmToken;
   bool get isLocalInitialized => _isLocalInitialized;
   bool get isFirebaseInitialized => _isFirebaseInitialized;
-
-  static const String _backendBaseUrl = String.fromEnvironment(
-    'BACKEND_URL',
-    defaultValue: 'http://10.0.2.2:8000', // 10.0.2.2 para emulador, localhost o IP en LAN
-  );
 
   /// 1. Inicialización de Notificaciones Locales (En el dispositivo)
   Future<void> initializeLocalNotifications() async {
@@ -123,18 +115,6 @@ class NotificationService {
     );
   }
 
-  /// 5. Notificación de Código de Verificación en Barra de Estado
-  Future<void> showSecurityCodeNotification({required String code}) async {
-    await showLocalNotification(
-      id: 303,
-      title: '🔐 Código de Seguridad Kpital',
-      body: 'Tu código de verificación es $code (válido por 10 minutos).',
-      channelId: 'kpital_security',
-      channelName: 'Seguridad y Códigos',
-      payload: 'security_code',
-    );
-  }
-
   /// 6. Inicialización de Firebase Cloud Messaging (Inciso B - Remotas)
   Future<void> initializeFirebase() async {
     try {
@@ -149,7 +129,6 @@ class NotificationService {
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
         _fcmToken = await messaging.getToken();
-        debugPrint('Token FCM Kpital: $_fcmToken');
 
         // Notificar en primer plano cuando llegue push remota
         FirebaseMessaging.onMessage.listen((RemoteMessage message) {
@@ -170,62 +149,4 @@ class NotificationService {
     }
   }
 
-  /// 7. Despacho Real de Códigos vía API Backend (Resend Email o WhatsApp Cloud API)
-  Future<Map<String, dynamic>> sendRecoveryCode({
-    required String channel, // 'email' o 'whatsapp'
-    required String target,  // 'addelynie@gmail.com' o '+591 69069393'
-    String userName = 'Madeline Flores',
-  }) async {
-    // Intento de conexión al backend
-    try {
-      final url = Uri.parse('$_backendBaseUrl/api/auth/send-recovery-code');
-      final response = await http
-          .post(
-            url,
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'channel': channel,
-              'target': target,
-              'user_name': userName,
-            }),
-          )
-          .timeout(const Duration(seconds: 3));
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      }
-    } catch (e) {
-      debugPrint('Backend no alcanzado para envío, utilizando pasarela directa: $e');
-    }
-
-    // Fallback inteligente para WhatsApp: Abrir enlace directo de WhatsApp Web / App
-    if (channel == 'whatsapp') {
-      final clean = target.replaceAll(RegExp(r'[\s\+\-]'), '');
-      final code = (100000 + (DateTime.now().millisecondsSinceEpoch % 900000)).toString();
-      final text = Uri.encodeComponent(
-          'Hola $userName 👋, tu código de acceso oficial para Kpital es: *$code*');
-      final waUri = Uri.parse('https://wa.me/$clean?text=$text');
-
-      if (await canLaunchUrl(waUri)) {
-        await launchUrl(waUri, mode: LaunchMode.externalApplication);
-      }
-
-      await showSecurityCodeNotification(code: code);
-      return {
-        'status': 'success',
-        'provider': 'whatsapp_direct',
-        'code': code,
-      };
-    }
-
-    // Fallback de notificación local de código
-    final localCode = (100000 + (DateTime.now().millisecondsSinceEpoch % 900000)).toString();
-    await showSecurityCodeNotification(code: localCode);
-
-    return {
-      'status': 'success',
-      'provider': 'local_notification',
-      'code': localCode,
-    };
-  }
 }
