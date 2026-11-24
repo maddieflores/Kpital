@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Modelo de Usuario en Kpital
@@ -85,151 +86,107 @@ class UserModel {
   }
 }
 
-/// Proveedor de Autenticación y Perfil
+/// Cliente de autenticación de Kpital. El servidor valida la identidad y el rol.
 class AuthProvider extends ChangeNotifier {
-  static const String _kUserStorageKey = 'kpital_authenticated_user_v1';
-  static const String _kOwnerPasswordKey = 'kpital_owner_password_v1';
-
-  // Cuenta Owner oficial predeterminada de Madeline Flores
-  static const UserModel defaultOwner = UserModel(
-    id: 'owner-maddie-001',
-    username: 'maddie',
-    fullName: 'Madeline Flores',
-    email: 'addelynie@gmail.com',
-    phoneNumber: '+591 69069393',
-    role: 'owner',
-    plan: 'Plan Owner Creadora (Ilimitado)',
-    currency: 'BOB',
-    countryCode: 'BO',
+  static const _backend = String.fromEnvironment(
+    'BACKEND_URL',
+    defaultValue: 'https://kpital-api.onrender.com',
+  );
+  static const _guest = UserModel(
+    id: '', username: 'invitado', fullName: 'Invitado', email: '',
+    phoneNumber: '', role: 'user', plan: 'free',
   );
 
-  UserModel _currentUser = defaultOwner;
-  bool _isLoggedIn = true;
-  String _ownerPassword = 'Maddie2026*';
-  String? _lastRecoveryCode;
+  UserModel _currentUser = _guest;
+  String? _token;
+  String? errorMessage;
 
   UserModel get currentUser => _currentUser;
-  bool get isLoggedIn => _isLoggedIn;
-  bool get isOwner => _currentUser.isOwner;
-  String get ownerPassword => _ownerPassword;
+  bool get isLoggedIn => _token != null;
+  bool get isOwner => isLoggedIn && _currentUser.isOwner;
 
   AuthProvider() {
-    _loadUser();
+    _clearLegacyCredentials();
   }
 
-  Future<void> _loadUser() async {
+  Future<void> _clearLegacyCredentials() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedPass = prefs.getString(_kOwnerPasswordKey);
-      if (savedPass != null && savedPass.isNotEmpty) {
-        _ownerPassword = savedPass;
-      }
-
-      final jsonStr = prefs.getString(_kUserStorageKey);
-      if (jsonStr != null && jsonStr.isNotEmpty) {
-        final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
-        _currentUser = UserModel.fromJson(decoded);
-        _isLoggedIn = true;
-      } else {
-        // Por defecto, asignar la cuenta Owner lista para usar
-        _currentUser = defaultOwner;
-        _isLoggedIn = true;
-        await _saveUser();
-      }
-    } catch (e) {
-      debugPrint('Error cargando usuario: $e');
-      _currentUser = defaultOwner;
-    }
-    notifyListeners();
-  }
-
-  Future<void> _saveUser() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_kUserStorageKey, jsonEncode(_currentUser.toJson()));
-      await prefs.setString(_kOwnerPasswordKey, _ownerPassword);
-    } catch (e) {
-      debugPrint('Error guardando usuario: $e');
+      await prefs.remove('kpital_owner_password_v1');
+      await prefs.remove('kpital_authenticated_user_v1');
+    } catch (_) {
+      // La sesión se administra en memoria aunque el almacenamiento no exista.
     }
   }
 
-  /// Inicio de sesión flexible (por usuario 'maddie', correo 'addelynie@gmail.com' o teléfono '69069393')
-  Future<bool> login({
-    required String identifier,
+  Future<bool> login({required String identifier, required String password}) =>
+      _startSession('login', {'identifier': identifier, 'password': password});
+
+  Future<bool> register({
+    required String fullName,
+    required String email,
+    required String phoneNumber,
     required String password,
-  }) async {
-    final cleanId = identifier.trim().toLowerCase().replaceAll('+', '').replaceAll(' ', '');
-    final isOwnerIdentifier = cleanId == 'maddie' ||
-        cleanId == 'addelynie@gmail.com' ||
-        cleanId == '59169069393' ||
-        cleanId == '69069393';
+    required String currency,
+  }) => _startSession('register', {
+    'full_name': fullName, 'email': email, 'phone_number': phoneNumber,
+    'password': password, 'currency': currency,
+  });
 
-    if (isOwnerIdentifier) {
-      // Si introduce la contraseña correcta del owner o para pruebas rápidas
-      _currentUser = defaultOwner;
-      _isLoggedIn = true;
-      await _saveUser();
+  Future<bool> _startSession(String path, Map<String, String> body) async {
+    final response = await _post(path, body);
+    if (response == null) return false;
+    try {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data['token'] as String;
+      final user = UserModel.fromJson(data['user'] as Map<String, dynamic>);
+      if (token.isEmpty) throw const FormatException();
+      _token = token;
+      _currentUser = user;
       notifyListeners();
       return true;
+    } catch (_) {
+      errorMessage = 'Kpital recibió una respuesta inesperada.';
+      return false;
     }
-
-    // Para cualquier otro usuario registrado
-    _currentUser = UserModel(
-      id: 'usr-${DateTime.now().millisecondsSinceEpoch}',
-      username: identifier.split('@').first,
-      fullName: identifier.contains('@') ? identifier.split('@').first : identifier,
-      email: identifier.contains('@') ? identifier : '$identifier@kpital.app',
-      phoneNumber: identifier.contains('@') ? '' : identifier,
-      role: 'user',
-      plan: 'free',
-    );
-    _isLoggedIn = true;
-    await _saveUser();
-    notifyListeners();
-    return true;
   }
 
-  /// Cerrar sesión
   Future<void> logout() async {
-    _isLoggedIn = false;
+    final token = _token;
+    _token = null;
+    _currentUser = _guest;
     notifyListeners();
+    if (token != null) await _post('logout', {}, token: token);
   }
 
-  /// Cambio de contraseña de la cuenta Owner
-  Future<void> updatePassword(String newPassword) async {
-    _ownerPassword = newPassword;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kOwnerPasswordKey, newPassword);
-    notifyListeners();
+  Future<bool> updatePassword(String currentPassword, String newPassword) async {
+    final token = _token;
+    if (token == null) return false;
+    return await _post('password', {
+      'current_password': currentPassword, 'new_password': newPassword,
+    }, token: token) != null;
   }
 
-  /// Actualización de perfil
-  Future<void> updateProfile({
-    String? fullName,
-    String? email,
-    String? phoneNumber,
-  }) async {
-    _currentUser = _currentUser.copyWith(
-      fullName: fullName,
-      email: email,
-      phoneNumber: phoneNumber,
-    );
-    await _saveUser();
-    notifyListeners();
-  }
-
-  /// Simulación y despacho de código de recuperación (Email / SMS real)
-  String generateRecoveryCode() {
-    final code = (100000 + (DateTime.now().millisecondsSinceEpoch % 900000)).toString();
-    _lastRecoveryCode = code;
-    return code;
-  }
-
-  bool verifyRecoveryCode(String inputCode) {
-    if (_lastRecoveryCode != null && inputCode.trim() == _lastRecoveryCode) {
-      return true;
+  Future<http.Response?> _post(
+    String path, Map<String, String> body, {String? token}
+  ) async {
+    errorMessage = null;
+    try {
+      final response = await http.post(
+        Uri.parse('$_backend/api/auth/$path'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 60));
+      if (response.statusCode >= 200 && response.statusCode < 300) return response;
+      final data = jsonDecode(response.body);
+      final detail = data is Map<String, dynamic> ? data['detail'] : null;
+      errorMessage = detail is String ? detail : 'Revisa los datos ingresados.';
+    } catch (_) {
+      errorMessage = 'No se pudo conectar con Kpital. Intenta de nuevo.';
     }
-    // Código comodín de seguridad para pruebas locales
-    return inputCode.trim() == '123456';
+    return null;
   }
 }
