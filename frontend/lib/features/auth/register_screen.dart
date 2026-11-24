@@ -22,7 +22,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-  bool _acceptedTerms = true;
+  bool _acceptedTerms = false;
+  bool _isSaving = false;
   String _selectedCurrency = 'Bs · Boliviano (BOB)';
 
   final List<String> _currencies = [
@@ -33,27 +34,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
     '\$ · Peso Argentino (ARS)',
   ];
 
-  void _submitRegister() {
-    if (!_acceptedTerms) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Por favor, acepta los términos y condiciones de privacidad.'),
-          backgroundColor: Color(0xFF8261B8),
-        ),
-      );
+  Future<void> _submitRegister() async {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    final messenger = ScaffoldMessenger.of(context);
+    if (!_acceptedTerms || name.isEmpty || !email.contains('@') ||
+        password.length < 12 || password != _confirmPasswordController.text) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Revisa tus datos y acepta los términos. Usa al menos 12 caracteres y confirma tu contraseña.'),
+      ));
       return;
     }
 
-    final authProv = Provider.of<AuthProvider>(context, listen: false);
-    if (_nameController.text.trim().isNotEmpty) {
-      authProv.updateProfile(
-        fullName: _nameController.text.trim(),
-        email: _emailController.text.trim(),
-        phoneNumber: _phoneController.text.trim(),
-      );
+    setState(() => _isSaving = true);
+    final auth = context.read<AuthProvider>();
+    final success = await auth.register(
+      fullName: name, email: email, phoneNumber: _phoneController.text.trim(),
+      password: password, currency: _selectedCurrency.split('(').last.split(')').first,
+    );
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+    if (!success) {
+      messenger.showSnackBar(SnackBar(content: Text(auth.errorMessage ?? 'No se pudo crear la cuenta.')));
+      return;
     }
-
-    // Navegar directamente al Dashboard
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
       (route) => false,
@@ -81,7 +86,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         content: const SingleChildScrollView(
           child: Text(
             'En Kpital protegemos la privacidad de tus finanzas. '
-            'Toda tu información está cifrada y bajo tu control total. '
+            'Este registro crea una cuenta para acceder a Kpital. '
             'No compartimos tus datos con terceros ni entidades comerciales sin tu consentimiento explícito.',
           ),
         ),
@@ -313,7 +318,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 width: double.infinity,
                 height: 54,
                 child: ElevatedButton(
-                  onPressed: _submitRegister,
+                  onPressed: _isSaving ? null : _submitRegister,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primaryPurple,
                     foregroundColor: Colors.white,
