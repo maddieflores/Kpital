@@ -43,3 +43,7 @@ frontend/windows/flutter/ephemeral/
 
 # Logs
 *.log
+
+# Mobile binaries
+*.apk
+*.aab

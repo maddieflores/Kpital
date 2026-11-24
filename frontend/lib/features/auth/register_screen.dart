@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/widgets/kpital_logo.dart';
 import 'login_screen.dart';
+import 'providers/auth_provider.dart';
 import '../../main.dart';
 
 /// Pantalla 4B: Registro / Crear cuenta
@@ -40,6 +42,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
       );
       return;
+    }
+
+    final authProv = Provider.of<AuthProvider>(context, listen: false);
+    if (_nameController.text.trim().isNotEmpty) {
+      authProv.updateProfile(
+        fullName: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phoneNumber: _phoneController.text.trim(),
+      );
     }
 
     // Navegar directamente al Dashboard

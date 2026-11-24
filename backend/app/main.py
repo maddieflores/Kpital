@@ -3,17 +3,44 @@ Punto de entrada de la API Backend (FastAPI)
 Conecta la base de datos, el recomendador de precios con IA y la gestión financiera.
 """
 
+import os
+from contextlib import asynccontextmanager, closing
+
 from fastapi import FastAPI
+from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from ai_service.pricing_agent import PricingAgent
 from ai_service.seasonal_trends import SeasonalTrendsService
+from app.api.auth_routes import router as auth_router, notifications_router
 from pydantic import BaseModel, Field
 from typing import Optional
+
+
+def check_database(database_url: str) -> None:
+    import psycopg2
+
+    try:
+        with closing(psycopg2.connect(database_url, connect_timeout=3)) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+    except psycopg2.Error:
+        raise RuntimeError("No se pudo conectar con PostgreSQL.") from None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        await run_in_threadpool(check_database, database_url)
+    yield
+
 
 app = FastAPI(
     title="API de Cuentas, Ahorro, Negocio e IA de Precios",
     version="1.0.0",
-    description="Backend para la gestión de finanzas personales, inventario y costeo por escalas con IA."
+    description="Backend para la gestión de finanzas personales, inventario y costeo por escalas con IA.",
+    lifespan=lifespan,
 )
 
 # Permitir conexión desde la app Flutter Móvil y Web
@@ -24,6 +51,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
+app.include_router(notifications_router)
 
 pricing_agent = PricingAgent()
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/kpital_logo.dart';
 import 'features/splash/splash_screen.dart';
@@ -21,14 +22,25 @@ import 'features/inventory/providers/inventory_provider.dart';
 import 'features/inventory/screens/inventory_screen.dart';
 import 'features/inventory/widgets/quick_sale_sheet.dart';
 import 'features/ads/providers/ads_provider.dart';
+import 'features/auth/providers/auth_provider.dart';
 import 'features/pricing_ai/screens/seasonal_trends_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializar Notificaciones Locales (Inciso A) y Firebase Push (Inciso B)
+  try {
+    await NotificationService().initializeLocalNotifications();
+    await NotificationService().initializeFirebase();
+  } catch (e) {
+    debugPrint("Error inicializando notificaciones: $e");
+  }
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => AccountsProvider()),
         ChangeNotifierProvider(create: (_) => TransactionsProvider()),
         ChangeNotifierProvider(create: (_) => DebtsProvider()),
