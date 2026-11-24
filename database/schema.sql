@@ -9,10 +9,10 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- 1. TABLA DE USUARIOS Y PLANES (Incluye rol 'owner' para ti y planes 'free'/'pro')
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    username VARCHAR(50) UNIQUE NOT NULL,       -- Ej: 'maddie'
-    email VARCHAR(255) UNIQUE NOT NULL,         -- Correo real para recuperación (addelynie@gmail.com)
-    full_name VARCHAR(150),                     -- 'Madeline Flores'
-    phone_number VARCHAR(30),                   -- Teléfono para códigos SMS/WhatsApp (69069393)
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    full_name VARCHAR(150),
+    phone_number VARCHAR(30),
     password_hash VARCHAR(255),                 -- Hash seguro de contraseña
     is_verified BOOLEAN DEFAULT FALSE,          -- Estado de verificación por email o teléfono
     country_code VARCHAR(5) DEFAULT 'BO',       -- 'BO' (Bolivia), 'AR' (Argentina), etc.
@@ -164,29 +164,9 @@ CREATE INDEX idx_transactions_user ON transactions(user_id, transaction_date DES
 CREATE INDEX idx_products_user ON business_products(user_id);
 CREATE INDEX idx_debts_user ON debts_and_loans(user_id, status);
 
--- ====================================================================
--- SEED DATA: CUENTA OWNER OFICIAL (MADELINE FLORES)
--- ====================================================================
-INSERT INTO users (
-    id,
-    username,
-    email,
-    full_name,
-    phone_number,
-    country_code,
-    currency,
-    role,
-    plan,
-    is_verified
-) VALUES (
-    'a0000000-0000-0000-0000-000000000001',
-    'maddie',
-    'addelynie@gmail.com',
-    'Madeline Flores',
-    '+59169069393',
-    'BO',
-    'BOB',
-    'owner',
-    'owner',
-    TRUE
-) ON CONFLICT (email) DO NOTHING;
+CREATE TABLE auth_sessions (
+    token_hash CHAR(64) PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX auth_sessions_user_id_idx ON auth_sessions (user_id);
