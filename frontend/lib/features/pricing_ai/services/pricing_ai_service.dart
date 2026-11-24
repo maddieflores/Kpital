@@ -65,7 +65,7 @@ class SeasonalTrendResult {
 class PricingAIService {
   static const String _backendBaseUrl = String.fromEnvironment(
     'BACKEND_URL',
-    defaultValue: 'http://127.0.0.1:8000',
+    defaultValue: 'https://kpital-api.onrender.com',
   );
 
   /// CU-6.1 & CU-6.2: Evaluador de Compra y Recomendador de Precios con IA
@@ -91,7 +91,7 @@ class PricingAIService {
               'extra_notes': extraNotes,
             }),
           )
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 90));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -247,6 +247,29 @@ class PricingAIService {
       'Coloca el 70% de tu dinero en productos evergreen de rotación diaria continua, '
       'y el 30% restante en mercadería de temporada ($seasonalFocus) para captar picos de alta ganancia sin arriesgar liquidez.'
     );
+
+    // Intento de enriquecer con el servidor en la nube
+    try {
+      final url = Uri.parse('$_backendBaseUrl/api/ai/seasonal-trends/$countryCode');
+      final response = await http.get(url).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List<String> cloudEvergreens = (data['evergreen_products'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            [];
+        return SeasonalTrendResult(
+          country: data['country'] ?? (countryCode == 'BO' ? 'Bolivia' : 'Argentina'),
+          currentMonth: data['current_month'] ?? currentMonthName,
+          seasonalFocus: data['seasonal_focus'] ?? seasonalFocus,
+          topProducts: topProducts,
+          evergreenProducts: cloudEvergreens.isNotEmpty ? cloudEvergreens : evergreenProducts,
+          capitalAllocationTip: data['ai_actionable_tip'] ?? tip,
+        );
+      }
+    } catch (_) {
+      debugPrint('Usando radar de temporadas embebido local.');
+    }
 
     return SeasonalTrendResult(
       country: countryCode == 'BO' ? 'Bolivia' : 'Argentina',

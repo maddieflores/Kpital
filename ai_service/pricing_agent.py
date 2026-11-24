@@ -7,12 +7,14 @@ Cuenta con sistema de respaldo automático (Fallback Heurístico) si no hay API 
 import os
 import json
 import logging
+from pathlib import Path
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 from ai_service.calculators.cost_breakdown import CostBreakdownCalculator
 from ai_service.prompts.country_contexts import get_country_context
 
 # Cargar variables de entorno desde .env
+load_dotenv(Path(__file__).resolve().parents[1] / "backend" / ".env")
 load_dotenv()
 
 logger = logging.getLogger("PricingAgent")
@@ -25,10 +27,13 @@ class PricingAgent:
         if self.api_key:
             try:
                 from google import genai
-                self._gemini_client = genai.Client(api_key=self.api_key)
+                self._gemini_client = genai.Client(
+                    api_key=self.api_key,
+                    http_options={"timeout": 15000},
+                )
                 logger.info("Cliente de Google Gemini inicializado correctamente.")
             except Exception as e:
-                logger.warning(f"No se pudo inicializar el cliente de Gemini: {e}")
+                logger.warning("No se pudo inicializar Gemini (%s).", type(e).__name__)
 
     def analyze_pricing(
         self,
@@ -73,6 +78,7 @@ class PricingAgent:
         )
 
         # 3. Consulta a Google Gemini si hay cliente activo
+        verdict_source = "fallback"
         if self._gemini_client:
             try:
                 gemini_data = self._consult_gemini(
@@ -89,9 +95,10 @@ class PricingAgent:
                     advice = gemini_data.get("advice", advice)
                     local_tip = gemini_data.get("local_tip", local_tip)
                     is_favorable = gemini_data.get("is_purchase_cost_favorable", is_favorable)
+                    verdict_source = "gemini"
                     logger.info("Veredicto generado exitosamente por Google Gemini.")
             except Exception as e:
-                logger.error(f"Error consultando Gemini, utilizando motor de respaldo: {e}")
+                logger.warning("Consulta Gemini fallida (%s). Usando respaldo.", type(e).__name__)
 
         return {
             "product_name": product_name,
@@ -124,6 +131,7 @@ class PricingAgent:
                 }
             },
             "ai_verdict": {
+                "source": verdict_source,
                 "is_purchase_cost_favorable": is_favorable,
                 "advice": advice,
                 "local_tip": local_tip
@@ -162,7 +170,7 @@ Debes responder ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
 }}
 No incluyas texto fuera del bloque JSON.
 """
-        candidate_models = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash"]
+        candidate_models = ("gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash")
         last_error = None
 
         for model_name in candidate_models:
@@ -170,6 +178,7 @@ No incluyas texto fuera del bloque JSON.
                 response = self._gemini_client.models.generate_content(
                     model=model_name,
                     contents=prompt,
+                    config={"response_mime_type": "application/json"},
                 )
                 text = response.text.strip()
                 if text.startswith("```json"):
@@ -179,10 +188,20 @@ No incluyas texto fuera del bloque JSON.
                 if text.endswith("```"):
                     text = text[:-3]
                 text = text.strip()
-                return json.loads(text)
+                verdict = json.loads(text)
+                if (
+                    not isinstance(verdict, dict)
+                    or not isinstance(verdict.get("is_purchase_cost_favorable"), bool)
+                    or not all(
+                        isinstance(verdict.get(field), str) and verdict[field].strip()
+                        for field in ("advice", "local_tip")
+                    )
+                ):
+                    raise ValueError("Veredicto Gemini incompleto")
+                return verdict
             except Exception as e:
                 last_error = e
-                logger.warning(f"Modelo {model_name} no disponible: {e}. Probando siguiente modelo...")
+                logger.warning("Falló el modelo %s (%s).", model_name, type(e).__name__)
 
         if last_error:
             raise last_error
