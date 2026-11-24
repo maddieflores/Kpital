@@ -12,3 +12,5 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+# The Firebase configuration is installed locally for Android builds.
+/app/google-services.json
