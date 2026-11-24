@@ -11,7 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from ai_service.pricing_agent import PricingAgent
 from ai_service.seasonal_trends import SeasonalTrendsService
-from app.api.auth_routes import router as auth_router, notifications_router
+from .api.auth_routes import router as auth_router
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -53,7 +53,6 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
-app.include_router(notifications_router)
 
 pricing_agent = PricingAgent()
 
