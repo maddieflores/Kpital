@@ -1,5 +1,26 @@
 BEGIN;
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'accounts' AND column_name = 'id' AND data_type = 'uuid'
+    ) THEN
+        ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_account_id_fkey;
+        ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_destination_account_id_fkey;
+        ALTER TABLE public.accounts ALTER COLUMN id TYPE VARCHAR(64) USING id::text;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'transactions' AND column_name = 'id' AND data_type = 'uuid'
+    ) THEN
+        ALTER TABLE public.transactions ALTER COLUMN id TYPE VARCHAR(64) USING id::text;
+        ALTER TABLE public.transactions ALTER COLUMN account_id TYPE VARCHAR(64) USING account_id::text;
+        ALTER TABLE public.transactions ALTER COLUMN destination_account_id TYPE VARCHAR(64) USING destination_account_id::text;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS public.accounts (
     id VARCHAR(64) PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,

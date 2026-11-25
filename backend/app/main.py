@@ -21,10 +21,31 @@ def check_and_init_database(database_url: str) -> None:
     import psycopg2
 
     try:
-        with closing(psycopg2.connect(database_url, connect_timeout=5)) as connection:
+        with closing(psycopg2.connect(database_url, connect_timeout=15)) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 cursor.execute("""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name = 'accounts' AND column_name = 'id' AND data_type = 'uuid'
+                        ) THEN
+                            ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_account_id_fkey;
+                            ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_destination_account_id_fkey;
+                            ALTER TABLE public.accounts ALTER COLUMN id TYPE VARCHAR(64) USING id::text;
+                        END IF;
+
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns 
+                            WHERE table_name = 'transactions' AND column_name = 'id' AND data_type = 'uuid'
+                        ) THEN
+                            ALTER TABLE public.transactions ALTER COLUMN id TYPE VARCHAR(64) USING id::text;
+                            ALTER TABLE public.transactions ALTER COLUMN account_id TYPE VARCHAR(64) USING account_id::text;
+                            ALTER TABLE public.transactions ALTER COLUMN destination_account_id TYPE VARCHAR(64) USING destination_account_id::text;
+                        END IF;
+                    END $$;
+
                     CREATE TABLE IF NOT EXISTS public.accounts (
                         id VARCHAR(64) PRIMARY KEY,
                         user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -62,16 +83,18 @@ def check_and_init_database(database_url: str) -> None:
                     CREATE INDEX IF NOT EXISTS transactions_account_id_idx ON public.transactions(account_id);
                 """)
             connection.commit()
-    except psycopg2.Error as e:
-        print(f"Error inicializando tablas en PostgreSQL: {e}")
-        raise RuntimeError("No se pudo conectar o inicializar PostgreSQL.") from None
+    except Exception as e:
+        print(f"Advertencia inicializando tablas en PostgreSQL: {e}")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        await run_in_threadpool(check_and_init_database, database_url)
+        try:
+            await run_in_threadpool(check_and_init_database, database_url)
+        except Exception as e:
+            print(f"Error en lifespan al conectar base de datos: {e}")
     yield
 
 

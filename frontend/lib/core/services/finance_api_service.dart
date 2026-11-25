@@ -10,7 +10,7 @@ class FinanceApiService {
     defaultValue: 'https://kpital-api.onrender.com',
   );
 
-  static const Duration _timeout = Duration(seconds: 10);
+  static const Duration _timeout = Duration(seconds: 25);
 
   static Map<String, String> _headers(String token) => {
         'Content-Type': 'application/json',

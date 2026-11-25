@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .auth_routes import database_cursor, require_token
 
@@ -34,8 +34,7 @@ class AccountPayload(BaseModel):
     iconName: Optional[str] = Field(default=None, alias="icon_name")
     createdAt: Optional[str] = Field(default=None, alias="created_at")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class AccountSyncPayload(BaseModel):
@@ -58,8 +57,7 @@ class TransactionPayload(BaseModel):
     transactionDate: Optional[str] = Field(default=None, alias="transaction_date")
     createdAt: Optional[str] = Field(default=None, alias="created_at")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class TransactionSyncPayload(BaseModel):
