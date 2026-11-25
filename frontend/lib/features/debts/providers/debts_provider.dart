@@ -150,8 +150,6 @@ class DebtsProvider extends ChangeNotifier {
 
     // EFECTO AUTOMÁTICO EN CUENTAS Y TRANSACCIONES (CU-3.2)
     if (debt.type == DebtType.receivable) {
-      // 1. Ingresa el dinero recibido a tu cuenta bancaria o efectivo
-      await accountsProvider.adjustBalance(accountId, actualPayment);
 
       // 2. Crea la transacción de ingreso en el historial
       await transactionsProvider.recordIncome(
@@ -164,8 +162,6 @@ class DebtsProvider extends ChangeNotifier {
         category: 'Abono de Deuda (Cobro)',
       );
     } else {
-      // Si era una cuenta por pagar a proveedor, descuenta de tu cuenta
-      await accountsProvider.adjustBalance(accountId, -actualPayment);
 
       await transactionsProvider.recordExpense(
         accountsProvider: accountsProvider,

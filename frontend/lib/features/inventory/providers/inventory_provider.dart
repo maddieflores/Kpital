@@ -148,7 +148,6 @@ class InventoryProvider extends ChangeNotifier {
     // Si se pagó con una cuenta bancaria/efectivo, se descuenta y se registra el egreso
     if (paidFromAccountId != null && accountsProvider != null && transactionsProvider != null) {
       final acc = accountsProvider.accounts.firstWhere((a) => a.id == paidFromAccountId);
-      await accountsProvider.adjustBalance(paidFromAccountId, -totalPurchaseCost);
       await transactionsProvider.recordExpense(
         accountsProvider: accountsProvider,
         accountId: paidFromAccountId,
@@ -236,8 +235,6 @@ class InventoryProvider extends ChangeNotifier {
     _sales.insert(0, saleRecord);
     await _saveData();
 
-    // 3. EFECTO AUTOMÁTICO EN CUENTAS: Suma el dinero a Banco Unión / Efectivo (CU-5.4)
-    await accountsProvider.adjustBalance(accountId, totalSaleAmount);
 
     // 4. Registra la transacción de ingreso en el historial general
     await transactionsProvider.recordIncome(

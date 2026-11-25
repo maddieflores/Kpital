@@ -48,13 +48,14 @@ class TransactionPayload(BaseModel):
     destinationAccountId: Optional[str] = Field(default=None, alias="destination_account_id")
     destinationAccountName: Optional[str] = Field(default=None, alias="destination_account_name")
     type: str = "income"
-    amount: float
+    amount: float = Field(gt=0, lt=1_000_000_000_000, allow_inf_nan=False)
     currency: str = "BOB"
     contactName: Optional[str] = Field(default=None, alias="contact_name")
     description: Optional[str] = None
     category: Optional[str] = None
     receiptImagePath: Optional[str] = Field(default=None, alias="receipt_image_url")
     transactionDate: Optional[str] = Field(default=None, alias="transaction_date")
+    isEssential: bool = Field(default=True, alias="is_essential")
     createdAt: Optional[str] = Field(default=None, alias="created_at")
 
     model_config = ConfigDict(populate_by_name=True)
@@ -91,6 +92,7 @@ def format_transaction_row(row: dict) -> dict:
         "contactName": row.get("contact_name"),
         "description": row.get("description"),
         "category": row.get("category"),
+        "isEssential": row.get("is_essential", True),
         "receiptImagePath": row.get("receipt_image_url"),
         "transactionDate": row["transaction_date"].isoformat() if row.get("transaction_date") else datetime.now().isoformat(),
         "createdAt": row["created_at"].isoformat() if row.get("created_at") else datetime.now().isoformat(),
@@ -129,6 +131,7 @@ def create_or_update_account(payload: AccountPayload, user_id: str = Depends(get
                    is_savings_vault = EXCLUDED.is_savings_vault,
                    target_amount = EXCLUDED.target_amount,
                    color_hex = EXCLUDED.color_hex
+               WHERE accounts.user_id = EXCLUDED.user_id
                RETURNING *""",
             (
                 payload.id,
@@ -143,6 +146,8 @@ def create_or_update_account(payload: AccountPayload, user_id: str = Depends(get
             ),
         )
         row = cursor.fetchone()
+        if not row:
+            raise HTTPException(409, "No se pudo guardar esa cuenta.")
         return format_account_row(row)
 
 
@@ -163,14 +168,7 @@ def sync_accounts(payload: AccountSyncPayload, user_id: str = Depends(get_curren
             cursor.execute(
                 """INSERT INTO public.accounts (id, user_id, name, type, currency, balance, is_savings_vault, target_amount, color_hex)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (id) DO UPDATE SET
-                       name = EXCLUDED.name,
-                       type = EXCLUDED.type,
-                       currency = EXCLUDED.currency,
-                       balance = EXCLUDED.balance,
-                       is_savings_vault = EXCLUDED.is_savings_vault,
-                       target_amount = EXCLUDED.target_amount,
-                       color_hex = EXCLUDED.color_hex""",
+                   ON CONFLICT (id) DO NOTHING""",
                 (
                     acc.id,
                     user_id,
@@ -206,9 +204,9 @@ def list_transactions(user_id: str = Depends(get_current_user_id)):
         cursor.execute(
             """SELECT id, account_id, account_name, destination_account_id, destination_account_name,
                       type, amount, currency, contact_name, description, category,
-                      receipt_image_url, transaction_date, created_at
+                      receipt_image_url, is_essential, transaction_date, created_at
                FROM public.transactions
-               WHERE user_id = %s
+               WHERE user_id = %s AND deleted_at IS NULL
                ORDER BY transaction_date DESC""",
             (user_id,),
         )
@@ -216,67 +214,65 @@ def list_transactions(user_id: str = Depends(get_current_user_id)):
         return [format_transaction_row(r) for r in rows]
 
 
+def insert_transaction(cursor, payload: TransactionPayload, user_id: str):
+    try:
+        tx_date = datetime.fromisoformat(payload.transactionDate) if payload.transactionDate else datetime.now()
+    except ValueError:
+        raise HTTPException(422, "La fecha del movimiento no es válida.") from None
+    cursor.execute(
+        """INSERT INTO public.transactions (
+               id, user_id, account_id, account_name, destination_account_id,
+               destination_account_name, type, amount, currency, contact_name,
+               description, category, receipt_image_url, transaction_date, is_essential
+           )
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (id) DO NOTHING RETURNING *""",
+        (payload.id, user_id, payload.accountId, payload.accountName,
+         payload.destinationAccountId, payload.destinationAccountName, payload.type,
+         payload.amount, payload.currency, payload.contactName, payload.description,
+         payload.category, payload.receiptImagePath, tx_date, payload.isEssential),
+    )
+    return cursor.fetchone()
+
+
+def apply_balance_changes(cursor, user_id: str, row: dict, *, reverse: bool = False):
+    kind = row["type"]
+    origin = row["account_id"]
+    destination = row["destination_account_id"]
+    amount = row["amount"]
+    if kind == "income":
+        changes = {origin: amount}
+    elif kind == "expense":
+        changes = {origin: -amount}
+    elif kind == "transfer" and destination and destination != origin:
+        changes = {origin: -amount, destination: amount}
+    else:
+        raise HTTPException(422, "El tipo o destino del movimiento no es válido.")
+
+    for account_id, delta in sorted(changes.items()):
+        cursor.execute(
+            """UPDATE public.accounts SET balance = COALESCE(balance, 0) + %s
+               WHERE id = %s AND user_id = %s""",
+            (-delta if reverse else delta, account_id, user_id),
+        )
+        if not cursor.rowcount and not reverse:
+            raise HTTPException(409, "La cuenta del movimiento no está disponible.")
+
+
 @router.post("/transactions")
 def create_transaction(payload: TransactionPayload, user_id: str = Depends(get_current_user_id)):
     with database_cursor() as cursor:
-        # Insertar o actualizar la transacción
-        tx_date = datetime.fromisoformat(payload.transactionDate) if payload.transactionDate else datetime.now()
+        row = insert_transaction(cursor, payload, user_id)
+        if row:
+            apply_balance_changes(cursor, user_id, row)
+            return format_transaction_row(row)
         cursor.execute(
-            """INSERT INTO public.transactions (
-                   id, user_id, account_id, account_name, destination_account_id,
-                   destination_account_name, type, amount, currency, contact_name,
-                   description, category, receipt_image_url, transaction_date
-               )
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-               ON CONFLICT (id) DO UPDATE SET
-                   account_name = EXCLUDED.account_name,
-                   amount = EXCLUDED.amount,
-                   contact_name = EXCLUDED.contact_name,
-                   description = EXCLUDED.description,
-                   category = EXCLUDED.category,
-                   receipt_image_url = EXCLUDED.receipt_image_url,
-                   transaction_date = EXCLUDED.transaction_date
-               RETURNING *""",
-            (
-                payload.id,
-                user_id,
-                payload.accountId,
-                payload.accountName,
-                payload.destinationAccountId,
-                payload.destinationAccountName,
-                payload.type,
-                payload.amount,
-                payload.currency,
-                payload.contactName,
-                payload.description,
-                payload.category,
-                payload.receiptImagePath,
-                tx_date,
-            ),
+            "SELECT * FROM public.transactions WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
+            (payload.id, user_id),
         )
         row = cursor.fetchone()
-
-        # Actualizar saldo de la cuenta en base de datos si existe
-        if payload.type == "income":
-            cursor.execute(
-                "UPDATE public.accounts SET balance = balance + %s WHERE id = %s AND user_id = %s",
-                (payload.amount, payload.accountId, user_id),
-            )
-        elif payload.type == "expense":
-            cursor.execute(
-                "UPDATE public.accounts SET balance = balance - %s WHERE id = %s AND user_id = %s",
-                (payload.amount, payload.accountId, user_id),
-            )
-        elif payload.type == "transfer" and payload.destinationAccountId:
-            cursor.execute(
-                "UPDATE public.accounts SET balance = balance - %s WHERE id = %s AND user_id = %s",
-                (payload.amount, payload.accountId, user_id),
-            )
-            cursor.execute(
-                "UPDATE public.accounts SET balance = balance + %s WHERE id = %s AND user_id = %s",
-                (payload.amount, payload.destinationAccountId, user_id),
-            )
-
+        if not row:
+            raise HTTPException(409, "No se pudo guardar ese movimiento.")
         return format_transaction_row(row)
 
 
@@ -284,77 +280,28 @@ def create_transaction(payload: TransactionPayload, user_id: str = Depends(get_c
 def delete_transaction(transaction_id: str, user_id: str = Depends(get_current_user_id)):
     with database_cursor() as cursor:
         cursor.execute(
-            """SELECT account_id, destination_account_id, type, amount 
-               FROM public.transactions 
-               WHERE id = %s AND user_id = %s""",
+            """UPDATE public.transactions SET deleted_at = now()
+               WHERE id = %s AND user_id = %s AND deleted_at IS NULL RETURNING *""",
             (transaction_id, user_id),
         )
-        tx = cursor.fetchone()
-        if tx:
-            # Revertir saldo
-            if tx["type"] == "income":
-                cursor.execute(
-                    "UPDATE public.accounts SET balance = balance - %s WHERE id = %s AND user_id = %s",
-                    (tx["amount"], tx["account_id"], user_id),
-                )
-            elif tx["type"] == "expense":
-                cursor.execute(
-                    "UPDATE public.accounts SET balance = balance + %s WHERE id = %s AND user_id = %s",
-                    (tx["amount"], tx["account_id"], user_id),
-                )
-            elif tx["type"] == "transfer" and tx["destination_account_id"]:
-                cursor.execute(
-                    "UPDATE public.accounts SET balance = balance + %s WHERE id = %s AND user_id = %s",
-                    (tx["amount"], tx["account_id"], user_id),
-                )
-                cursor.execute(
-                    "UPDATE public.accounts SET balance = balance - %s WHERE id = %s AND user_id = %s",
-                    (tx["amount"], tx["destination_account_id"], user_id),
-                )
-
-            cursor.execute(
-                "DELETE FROM public.transactions WHERE id = %s AND user_id = %s",
-                (transaction_id, user_id),
-            )
+        row = cursor.fetchone()
+        if row:
+            apply_balance_changes(cursor, user_id, row, reverse=True)
 
 
 @router.post("/transactions/sync")
 def sync_transactions(payload: TransactionSyncPayload, user_id: str = Depends(get_current_user_id)):
     with database_cursor() as cursor:
+        # These movements are historical. The account import already includes their balances.
         for tx in payload.transactions:
-            tx_date = datetime.fromisoformat(tx.transactionDate) if tx.transactionDate else datetime.now()
-            cursor.execute(
-                """INSERT INTO public.transactions (
-                       id, user_id, account_id, account_name, destination_account_id,
-                       destination_account_name, type, amount, currency, contact_name,
-                       description, category, receipt_image_url, transaction_date
-                   )
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (id) DO NOTHING""",
-                (
-                    tx.id,
-                    user_id,
-                    tx.accountId,
-                    tx.accountName,
-                    tx.destinationAccountId,
-                    tx.destinationAccountName,
-                    tx.type,
-                    tx.amount,
-                    tx.currency,
-                    tx.contactName,
-                    tx.description,
-                    tx.category,
-                    tx.receiptImagePath,
-                    tx_date,
-                ),
-            )
+            insert_transaction(cursor, tx, user_id)
 
         cursor.execute(
             """SELECT id, account_id, account_name, destination_account_id, destination_account_name,
                       type, amount, currency, contact_name, description, category,
-                      receipt_image_url, transaction_date, created_at
+                      receipt_image_url, is_essential, transaction_date, created_at
                FROM public.transactions
-               WHERE user_id = %s
+               WHERE user_id = %s AND deleted_at IS NULL
                ORDER BY transaction_date DESC""",
             (user_id,),
         )

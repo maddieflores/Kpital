@@ -154,57 +154,59 @@ class TransactionsProvider extends ChangeNotifier {
   Future<void> setAuthSession({required String userId, String? token}) async {
     final userChanged = _currentUserId != userId;
     final tokenChanged = _authToken != token;
-    if (!userChanged && !tokenChanged && !_isLoading) return;
+    if (!userChanged && !tokenChanged) return;
+    if (userChanged) _transactions = [];
     _currentUserId = userId;
     _authToken = token;
     await _loadTransactions();
   }
 
   Future<void> _loadTransactions() async {
+    final userId = _currentUserId;
+    final token = _authToken;
+    final storageKey = _storageKey;
+    bool sessionIsCurrent() => _currentUserId == userId && _authToken == token;
     _isLoading = true;
     notifyListeners();
 
     try {
-      if (_currentUserId.isEmpty) {
-        _transactions = [];
-        return;
-      }
+      if (userId.isEmpty) return;
       final prefs = await SharedPreferences.getInstance();
-      final dataString = prefs.getString(_storageKey);
-
-      if (dataString != null && dataString.isNotEmpty) {
-        final List<dynamic> decoded = jsonDecode(dataString);
-        _transactions = decoded.map((e) => TransactionModel.fromJson(e as Map<String, dynamic>)).toList();
-        _transactions.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
-      } else {
-        // Base limpia para usuarios nuevos: no precargar transacciones demo
-        _transactions = [];
+      if (!sessionIsCurrent()) return;
+      final stored = prefs.getString(storageKey);
+      var loaded = <TransactionModel>[];
+      if (stored != null && stored.isNotEmpty) {
+        final decoded = jsonDecode(stored) as List<dynamic>;
+        loaded = decoded.map((item) => TransactionModel.fromJson(item as Map<String, dynamic>)).toList();
       }
-
-      // Sincronizar automáticamente con la nube si hay sesión activa
-      if (_authToken != null && _authToken!.isNotEmpty) {
-        final cloudTxs = await FinanceApiService.syncTransactions(_authToken!, _transactions);
-        if (cloudTxs != null) {
-          _transactions = cloudTxs;
-          _transactions.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
-          await _saveTransactions();
+      if (token != null && token.isNotEmpty) {
+        final cloud = await FinanceApiService.syncTransactions(token, loaded);
+        if (!sessionIsCurrent()) return;
+        if (cloud != null) {
+          loaded = cloud;
+          await prefs.setString(storageKey, jsonEncode(loaded.map((item) => item.toJson()).toList()));
+          if (!sessionIsCurrent()) return;
         }
       }
+      loaded.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
+      _transactions = loaded;
     } catch (e) {
-      debugPrint('Error al cargar transacciones: $e');
-      _transactions = [];
+      debugPrint('Error al sincronizar movimientos: $e');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (sessionIsCurrent()) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> _saveTransactions() async {
     if (_currentUserId.isEmpty) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
+      final storageKey = _storageKey;
       final dataString = jsonEncode(_transactions.map((t) => t.toJson()).toList());
-      await prefs.setString(_storageKey, dataString);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(storageKey, dataString);
     } catch (e) {
       debugPrint('Error al guardar transacciones: $e');
     }
@@ -222,6 +224,8 @@ class TransactionsProvider extends ChangeNotifier {
     DateTime? transactionDate,
     String category = 'Transferencia Recibida',
   }) async {
+    final token = _authToken;
+    final userId = _currentUserId;
     final now = DateTime.now();
     final newTx = TransactionModel(
       id: 'tx_${now.millisecondsSinceEpoch}',
@@ -241,11 +245,13 @@ class TransactionsProvider extends ChangeNotifier {
     _transactions.insert(0, newTx);
     await _saveTransactions();
 
-    // Actualiza automáticamente el saldo en la cuenta elegida (CU-1.1)
-    await accountsProvider.adjustBalance(accountId, amount);
+    if (_currentUserId != userId || _authToken != token) return newTx;
 
-    if (_authToken != null && _authToken!.isNotEmpty) {
-      FinanceApiService.saveTransaction(_authToken!, newTx);
+    // Actualiza automáticamente el saldo en la cuenta elegida (CU-1.1)
+    await accountsProvider.adjustBalance(accountId, amount, syncToCloud: false);
+
+    if (token != null && token.isNotEmpty) {
+      await FinanceApiService.saveTransaction(token, newTx);
     }
 
     notifyListeners();
@@ -265,6 +271,8 @@ class TransactionsProvider extends ChangeNotifier {
     String? receiptImagePath,
     DateTime? transactionDate,
   }) async {
+    final token = _authToken;
+    final userId = _currentUserId;
     final now = DateTime.now();
     final newTx = TransactionModel(
       id: 'tx_${now.millisecondsSinceEpoch}',
@@ -285,11 +293,13 @@ class TransactionsProvider extends ChangeNotifier {
     _transactions.insert(0, newTx);
     await _saveTransactions();
 
-    // Descuenta el dinero de la cuenta de salida
-    await accountsProvider.adjustBalance(accountId, -amount);
+    if (_currentUserId != userId || _authToken != token) return newTx;
 
-    if (_authToken != null && _authToken!.isNotEmpty) {
-      FinanceApiService.saveTransaction(_authToken!, newTx);
+    // Descuenta el dinero de la cuenta de salida
+    await accountsProvider.adjustBalance(accountId, -amount, syncToCloud: false);
+
+    if (token != null && token.isNotEmpty) {
+      await FinanceApiService.saveTransaction(token, newTx);
     }
 
     notifyListeners();
@@ -301,23 +311,24 @@ class TransactionsProvider extends ChangeNotifier {
     required String transactionId,
     required AccountsProvider accountsProvider,
   }) async {
+    final token = _authToken;
     final index = _transactions.indexWhere((t) => t.id == transactionId);
     if (index == -1) return;
 
-    final tx = _transactions[index];
+    final tx = _transactions.removeAt(index);
+    final saving = _saveTransactions();
 
     // Revertir efecto en la cuenta
     if (tx.type == TransactionType.income) {
-      await accountsProvider.adjustBalance(tx.accountId, -tx.amount);
+      await accountsProvider.adjustBalance(tx.accountId, -tx.amount, syncToCloud: false);
     } else if (tx.type == TransactionType.expense) {
-      await accountsProvider.adjustBalance(tx.accountId, tx.amount);
+      await accountsProvider.adjustBalance(tx.accountId, tx.amount, syncToCloud: false);
     }
 
-    _transactions.removeAt(index);
-    await _saveTransactions();
+    await saving;
 
-    if (_authToken != null && _authToken!.isNotEmpty) {
-      FinanceApiService.deleteTransaction(_authToken!, transactionId);
+    if (token != null && token.isNotEmpty) {
+      await FinanceApiService.deleteTransaction(token, transactionId);
     }
 
     notifyListeners();

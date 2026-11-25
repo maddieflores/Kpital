@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar código del backend y ai_service
 COPY backend/app /app/backend/app
 COPY ai_service /app/ai_service
+COPY database/migrations /app/database/migrations
 
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
