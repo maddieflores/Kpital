@@ -51,7 +51,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // 01 Identidad de la aplicación
+          // Identidad de la aplicación
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -62,7 +62,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("01 Identidad de la aplicación", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Text("Identidad de la aplicación", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 4),
                 Text(
                   "Tu color principal permanece, independientemente del fondo.",
@@ -105,7 +105,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
           ),
           const SizedBox(height: 20),
 
-          // 02 Modo de visualización
+          // Modo de visualización
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -116,7 +116,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("02 Modo de visualización", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Text("Modo de visualización", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -137,7 +137,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
           ),
           const SizedBox(height: 20),
 
-          // 03 Elige tu fondo
+          // Elige tu fondo
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -148,7 +148,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("03 Elige tu fondo", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Text("Elige tu fondo", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 14),
                 GridView.builder(
                   shrinkWrap: true,

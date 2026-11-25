@@ -70,7 +70,7 @@ class InventoryScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Inventario & Escalas (Módulo 5)',
+                              'Inventario & Escalas',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,

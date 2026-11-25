@@ -213,6 +213,21 @@ class TransactionsScreen extends StatelessWidget {
                                         ),
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                      if (tx.contactName?.isNotEmpty == true &&
+                                          tx.description?.isNotEmpty == true &&
+                                          tx.description != "Transferencia recibida") ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          tx.description!,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: tokens.textSecondary,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
                                       const SizedBox(height: 2),
                                       Row(
                                         children: [
