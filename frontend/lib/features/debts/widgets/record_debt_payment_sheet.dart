@@ -160,7 +160,7 @@ class _RecordDebtPaymentSheetState extends State<RecordDebtPaymentSheet> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        isReceivable ? 'Registrar Abono (CU-3.2)' : 'Registrar Pago a Proveedor',
+                        isReceivable ? 'Registrar Abono' : 'Registrar Pago a Proveedor',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -277,10 +277,10 @@ class _RecordDebtPaymentSheetState extends State<RecordDebtPaymentSheet> {
               ),
               const SizedBox(height: 8),
 
-              // Cuenta donde entra o sale el dinero (CU-3.2)
+              // Cuenta donde entra o sale el dinero
               Text(
                 isReceivable
-                    ? '¿A qué cuenta ingresa el dinero? (CU-3.2)'
+                    ? '¿A qué cuenta ingresa el dinero?'
                     : '¿De qué cuenta se debitará el pago?',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),

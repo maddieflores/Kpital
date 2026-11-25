@@ -192,7 +192,7 @@ class _CreateBatchProductSheetState extends State<CreateBatchProductSheet> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'Cargar Lote Mayorista (CU-5.1)',
+                        'Cargar Lote Mayorista',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -318,7 +318,7 @@ class _CreateBatchProductSheetState extends State<CreateBatchProductSheet> {
                         Icon(Icons.calculate_outlined, color: Theme.of(context).primaryColor, size: 18),
                         const SizedBox(width: 6),
                         Text(
-                          'Escandallo Automático de Costos (CU-5.2)',
+                          'Escandallo Automático de Costos',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -353,9 +353,9 @@ class _CreateBatchProductSheetState extends State<CreateBatchProductSheet> {
               ),
               const SizedBox(height: 18),
 
-              // FIJACIÓN DE PRECIOS DE VENTA CON MÁRGENES (CU-5.3)
+              // FIJACIÓN DE PRECIOS DE VENTA CON MÁRGENES
               Text(
-                'Fijar Precios de Venta al Público (CU-5.3)',
+                'Fijar Precios de Venta al Público',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary),
               ),
               const SizedBox(height: 4),

@@ -160,7 +160,7 @@ class _CreateDebtSheetState extends State<CreateDebtSheet> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    isReceivable ? 'Nueva Cuenta por Cobrar (CU-3.1)' : 'Nueva Cuenta por Pagar (CU-3.4)',
+                    isReceivable ? 'Nueva Cuenta por Cobrar' : 'Nueva Cuenta por Pagar',
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.bold,
@@ -308,7 +308,7 @@ class _CreateDebtSheetState extends State<CreateDebtSheet> {
 
               // Nombre de la persona o entidad
               Text(
-                isReceivable ? '¿A quién le fiaste o prestaste? (CU-3.1)' : '¿A quién le debes? (Proveedor / Banco)',
+                isReceivable ? '¿A quién le fiaste o prestaste?' : '¿A quién le debes? (Proveedor / Banco)',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
               const SizedBox(height: 6),
@@ -325,9 +325,9 @@ class _CreateDebtSheetState extends State<CreateDebtSheet> {
               ),
               const SizedBox(height: 16),
 
-              // Teléfono WhatsApp (CU-3.3)
+              // Teléfono WhatsApp
               Text(
-                'Teléfono / Celular (Para recordatorios por WhatsApp CU-3.3)',
+                'Teléfono / Celular (Para recordatorios por WhatsApp)',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
               const SizedBox(height: 6),

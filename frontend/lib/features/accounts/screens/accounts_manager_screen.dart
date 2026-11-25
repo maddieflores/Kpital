@@ -115,7 +115,7 @@ class AccountsManagerScreen extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Patrimonio Total (CU-4.4)',
+                              'Patrimonio Total',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: tokens.balanceCardText.withOpacity(0.85),

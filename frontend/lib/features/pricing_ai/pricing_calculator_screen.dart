@@ -228,7 +228,7 @@ class _PricingCalculatorScreenState extends State<PricingCalculatorScreen> {
                             const Icon(Icons.fact_check_outlined, size: 18, color: Color(0xFF3366D6)),
                             const SizedBox(width: 8),
                             Text(
-                              'Evaluador de Compra Mayorista (CU-6.1)',
+                              'Evaluador de Compra Mayorista',
                               style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                             ),
                           ],
@@ -427,7 +427,7 @@ class _PricingCalculatorScreenState extends State<PricingCalculatorScreen> {
                                   Icon(Icons.price_check_rounded, color: primaryColor, size: 20),
                                   const SizedBox(width: 8),
                                   Text(
-                                    'Precios Sugeridos por Escala (CU-6.2)',
+                                    'Precios Sugeridos por Escala',
                                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                                   ),
                                 ],

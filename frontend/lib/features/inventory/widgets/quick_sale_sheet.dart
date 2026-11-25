@@ -187,7 +187,7 @@ class _QuickSaleSheetState extends State<QuickSaleSheet> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'Venta Rápida de Negocio (CU-5.4)',
+                        'Venta Rápida de Negocio',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -400,7 +400,7 @@ class _QuickSaleSheetState extends State<QuickSaleSheet> {
               const SizedBox(height: 12),
 
               Text(
-                '¿A qué cuenta ingresará el dinero cobrado? (CU-5.4)',
+                '¿A qué cuenta ingresará el dinero cobrado?',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
               const SizedBox(height: 6),

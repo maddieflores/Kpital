@@ -225,7 +225,7 @@ class _RecordIncomeSheetState extends State<RecordIncomeSheet> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'Registrar Transferencia (CU-1.1)',
+                        'Registrar Transferencia',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -444,7 +444,7 @@ class _RecordIncomeSheetState extends State<RecordIncomeSheet> {
 
               // CU-1.2: Adjuntar comprobante / foto QR
               Text(
-                'Comprobante o Captura QR (CU-1.2)',
+                'Comprobante o Captura QR',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
               const SizedBox(height: 8),

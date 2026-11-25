@@ -70,7 +70,7 @@ class _ExpensesAnalyticsScreenState extends State<ExpensesAnalyticsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Análisis de Gastos (CU-2.3)',
+                              'Análisis de Gastos',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -225,7 +225,7 @@ class _ExpensesAnalyticsScreenState extends State<ExpensesAnalyticsScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Distribución Porcentual (CU-2.3)',
+                              'Distribución Porcentual',
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,

@@ -204,7 +204,7 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'Registrar Gasto Rápido (CU-2.1)',
+                        'Registrar Gasto Rápido',
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
@@ -254,7 +254,7 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
 
               // CU-2.2: Clasificación de Gasto Fijo vs Gasto Hormiga
               Text(
-                'Clasificación del Gasto (CU-2.2)',
+                'Clasificación del Gasto',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.textSecondary),
               ),
               const SizedBox(height: 8),

@@ -125,7 +125,7 @@ class InventoryScreen extends StatelessWidget {
                                 const Icon(Icons.query_stats_rounded, size: 18, color: Color(0xFF3366D6)),
                                 const SizedBox(width: 6),
                                 Text(
-                                  'Capital Invertido vs. Recuperado (CU-5.5)',
+                                  'Capital Invertido vs. Recuperado',
                                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: tokens.textPrimary),
                                 ),
                               ],
@@ -386,8 +386,8 @@ class _ProductCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text('Escala', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
-                    Text('Costo Lote (CU-5.2)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
-                    Text('Precio Venta (CU-5.3)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
+                    Text('Costo Lote', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
+                    Text('Precio Venta', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
                     Text('Margen', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: tokens.textSecondary)),
                   ],
                 ),
