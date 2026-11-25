@@ -3,7 +3,6 @@ import '../../core/widgets/kpital_logo.dart';
 import '../onboarding/widgets/onboarding_illustrations.dart';
 import 'login_screen.dart';
 import 'register_screen.dart';
-import '../../main.dart';
 
 /// Pantalla 3: Bienvenida a Kpital
 class WelcomeScreen extends StatelessWidget {
@@ -18,13 +17,6 @@ class WelcomeScreen extends StatelessWidget {
   void _goToRegister(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const RegisterScreen()),
-    );
-  }
-
-  void _goToDashboardDemo(BuildContext context) {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-      (route) => false,
     );
   }
 
@@ -158,32 +150,7 @@ class WelcomeScreen extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(height: 22),
-
-              // Enlace modo demo
-              TextButton(
-                onPressed: () => _goToDashboardDemo(context),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF8261B8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text(
-                      'Explorar modo demo',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF8261B8),
-                      ),
-                    ),
-                    SizedBox(width: 6),
-                    Icon(Icons.arrow_forward, size: 16, color: Color(0xFF8261B8)),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
             ],
           ),
         ),

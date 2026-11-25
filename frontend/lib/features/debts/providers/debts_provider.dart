@@ -6,10 +6,12 @@ import '../../accounts/providers/accounts_provider.dart';
 import '../../transactions/providers/transactions_provider.dart';
 
 class DebtsProvider extends ChangeNotifier {
-  static const String _storageKey = 'kpital_debts_v1';
-
+  String _currentUserId = '';
   List<DebtModel> _debts = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+
+  String get _storageKey =>
+      'kpital_debts_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
 
   List<DebtModel> get allDebts => List.unmodifiable(_debts);
   bool get isLoading => _isLoading;
@@ -34,8 +36,12 @@ class DebtsProvider extends ChangeNotifier {
   double get totalPayable =>
       payables.fold(0.0, (acc, item) => acc + item.remainingAmount);
 
-  DebtsProvider() {
-    _loadDebts();
+  DebtsProvider();
+
+  Future<void> setUserId(String userId) async {
+    if (_currentUserId == userId && !_isLoading) return;
+    _currentUserId = userId;
+    await _loadDebts();
   }
 
   Future<void> _loadDebts() async {
@@ -43,6 +49,10 @@ class DebtsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_currentUserId.isEmpty) {
+        _debts = [];
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       final dataString = prefs.getString(_storageKey);
 
@@ -50,70 +60,12 @@ class DebtsProvider extends ChangeNotifier {
         final List<dynamic> decoded = jsonDecode(dataString);
         _debts = decoded.map((e) => DebtModel.fromJson(e as Map<String, dynamic>)).toList();
       } else {
-        // Datos semilla representativos de comercio local boliviano
-        final now = DateTime.now();
-        _debts = [
-          DebtModel(
-            id: 'debt_1',
-            type: DebtType.receivable,
-            personName: 'Carlos Mamani',
-            phoneNumber: '78945612',
-            totalAmount: 600.00,
-            remainingAmount: 450.00,
-            dueDate: now.add(const Duration(days: 7)),
-            concept: '1 docena parkas térmicas al crédito',
-            status: DebtStatus.partial,
-            payments: [
-              DebtPayment(
-                id: 'pay_1',
-                amount: 150.00,
-                date: now.subtract(const Duration(days: 2)),
-                accountId: 'acc_union',
-                accountName: 'Banco Unión (QR)',
-                note: 'Primer abono por QR',
-              ),
-            ],
-            createdAt: now.subtract(const Duration(days: 10)),
-          ),
-          DebtModel(
-            id: 'debt_2',
-            type: DebtType.receivable,
-            personName: 'Doña Elena (Feria)',
-            phoneNumber: '71234567',
-            totalAmount: 280.00,
-            remainingAmount: 280.00,
-            dueDate: now.add(const Duration(days: 4)),
-            concept: 'Ropa fiada puesto 42',
-            status: DebtStatus.pending,
-            createdAt: now.subtract(const Duration(days: 5)),
-          ),
-          DebtModel(
-            id: 'debt_3',
-            type: DebtType.payable,
-            personName: 'Distribuidora La Paz (Insumos)',
-            phoneNumber: '65432198',
-            totalAmount: 1200.00,
-            remainingAmount: 800.00,
-            dueDate: now.add(const Duration(days: 12)),
-            concept: 'Lote fardo de invierno cuota 2/3',
-            status: DebtStatus.partial,
-            payments: [
-              DebtPayment(
-                id: 'pay_prov_1',
-                amount: 400.00,
-                date: now.subtract(const Duration(days: 3)),
-                accountId: 'acc_union',
-                accountName: 'Banco Unión (QR)',
-                note: 'Pago cuota inicial',
-              ),
-            ],
-            createdAt: now.subtract(const Duration(days: 15)),
-          ),
-        ];
-        await _saveDebts();
+        // Base limpia para usuarios nuevos: no precargar deudas demo
+        _debts = [];
       }
     } catch (e) {
       debugPrint('Error al cargar deudas: $e');
+      _debts = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -121,6 +73,7 @@ class DebtsProvider extends ChangeNotifier {
   }
 
   Future<void> _saveDebts() async {
+    if (_currentUserId.isEmpty) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final dataString = jsonEncode(_debts.map((d) => d.toJson()).toList());

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../auth/providers/auth_provider.dart';
 
 class LivePreviewCard extends StatelessWidget {
   final VisualIdentity identity;
@@ -23,6 +25,15 @@ class LivePreviewCard extends StatelessWidget {
 
     final textPrimary = isDark ? const Color(0xFFF9FAFB) : const Color(0xFF111827);
     final textSecondary = isDark ? const Color(0xFF9CA3AF) : const Color(0xFF6B7280);
+
+    final authProv = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProv.currentUser;
+    final initials = user.initials;
+    final greetingName = user.fullName.trim().isNotEmpty
+        ? user.fullName.trim().split(RegExp(r'\s+')).first
+        : (user.username.trim().isNotEmpty && user.username != 'invitado'
+            ? user.username
+            : 'Usuario');
 
     return Container(
       decoration: BoxDecoration(
@@ -52,7 +63,7 @@ class LivePreviewCard extends StatelessWidget {
                 radius: 16,
                 backgroundColor: isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.06),
                 child: Text(
-                  "AV",
+                  initials,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -66,7 +77,7 @@ class LivePreviewCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Hola, Alejandro",
+                      "Hola, $greetingName",
                       style: TextStyle(
                         fontSize: 12,
                         color: textSecondary,

@@ -85,13 +85,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _goToDemo() {
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-      (route) => false,
-    );
-  }
-
   @override
   void dispose() {
     _emailPhoneController.dispose();
@@ -308,24 +301,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              const SizedBox(height: 14),
-
-              // Modo demo
-              Center(
-                child: TextButton(
-                  onPressed: _goToDemo,
-                  child: const Text(
-                    'Explorar modo demo',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: primaryPurple,
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 18),
+              const SizedBox(height: 24),
 
               // Subtítulo de aviso
               Center(

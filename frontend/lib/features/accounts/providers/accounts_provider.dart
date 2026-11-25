@@ -5,10 +5,12 @@ import 'package:intl/intl.dart';
 import '../models/account.dart';
 
 class AccountsProvider extends ChangeNotifier {
-  static const String _storageKey = 'kpital_user_accounts_v1';
-
+  String _currentUserId = '';
   List<Account> _accounts = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+
+  String get _storageKey =>
+      'kpital_accounts_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
 
   List<Account> get accounts => List.unmodifiable(_accounts);
   bool get isLoading => _isLoading;
@@ -33,8 +35,12 @@ class AccountsProvider extends ChangeNotifier {
   double get vaultsTotal =>
       savingsVaults.fold(0.0, (acc, item) => acc + item.balance);
 
-  AccountsProvider() {
-    _loadAccounts();
+  AccountsProvider();
+
+  Future<void> setUserId(String userId) async {
+    if (_currentUserId == userId && !_isLoading) return;
+    _currentUserId = userId;
+    await _loadAccounts();
   }
 
   Future<void> _loadAccounts() async {
@@ -42,6 +48,10 @@ class AccountsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_currentUserId.isEmpty) {
+        _accounts = [];
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       final dataString = prefs.getString(_storageKey);
 
@@ -49,65 +59,12 @@ class AccountsProvider extends ChangeNotifier {
         final List<dynamic> decoded = jsonDecode(dataString);
         _accounts = decoded.map((e) => Account.fromJson(e as Map<String, dynamic>)).toList();
       } else {
-        // Cuentas iniciales predeterminadas contextualizadas a Bolivia (CU-4.1 y CU-4.2)
-        _accounts = [
-          Account(
-            id: 'acc_efectivo',
-            name: 'Efectivo en mano',
-            type: AccountType.cash,
-            currency: 'BOB',
-            balance: 650.00,
-            isSavingsVault: false,
-            colorHex: '#10B981', // Verde
-            createdAt: DateTime.now().subtract(const Duration(days: 30)),
-          ),
-          Account(
-            id: 'acc_union',
-            name: 'Banco Unión (QR)',
-            type: AccountType.bank,
-            currency: 'BOB',
-            balance: 3200.00,
-            isSavingsVault: false,
-            colorHex: '#3366D6', // Azul
-            createdAt: DateTime.now().subtract(const Duration(days: 25)),
-          ),
-          Account(
-            id: 'acc_bcp',
-            name: 'BCP Soli Pagos',
-            type: AccountType.digitalWallet,
-            currency: 'BOB',
-            balance: 1000.00,
-            isSavingsVault: false,
-            colorHex: '#F59E0B', // Naranja
-            createdAt: DateTime.now().subtract(const Duration(days: 15)),
-          ),
-          Account(
-            id: 'vault_fardo',
-            name: 'Bóveda: Fardo de Invierno',
-            type: AccountType.savingsVault,
-            currency: 'BOB',
-            balance: 5200.00,
-            isSavingsVault: true,
-            targetAmount: 8000.00, // Meta CU-4.2
-            colorHex: '#8B5CF6', // Violeta
-            createdAt: DateTime.now().subtract(const Duration(days: 10)),
-          ),
-          Account(
-            id: 'vault_emergencia',
-            name: 'Bóveda: Fondo Emergencia',
-            type: AccountType.savingsVault,
-            currency: 'BOB',
-            balance: 4000.00,
-            isSavingsVault: true,
-            targetAmount: 6000.00,
-            colorHex: '#06B6D4', // Cyan
-            createdAt: DateTime.now().subtract(const Duration(days: 5)),
-          ),
-        ];
-        await _saveAccounts();
+        // Base limpia para usuarios nuevos: no precargar datos demo ajenos
+        _accounts = [];
       }
     } catch (e) {
       debugPrint('Error al cargar cuentas: $e');
+      _accounts = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -115,6 +72,7 @@ class AccountsProvider extends ChangeNotifier {
   }
 
   Future<void> _saveAccounts() async {
+    if (_currentUserId.isEmpty) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final dataString = jsonEncode(_accounts.map((a) => a.toJson()).toList());

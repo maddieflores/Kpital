@@ -97,6 +97,9 @@ class AuthProvider extends ChangeNotifier {
     phoneNumber: '', role: 'user', plan: 'free',
   );
 
+  static const _tokenKey = 'kpital_session_token_v2';
+  static const _userKey = 'kpital_session_user_v2';
+
   UserModel _currentUser = _guest;
   String? _token;
   String? errorMessage;
@@ -106,7 +109,32 @@ class AuthProvider extends ChangeNotifier {
   bool get isOwner => isLoggedIn && _currentUser.isOwner;
 
   AuthProvider() {
-    _clearLegacyCredentials();
+    _initAuth();
+  }
+
+  Future<void> _initAuth() async {
+    await _clearLegacyCredentials();
+    await _restoreSession();
+  }
+
+  Future<void> _restoreSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedToken = prefs.getString(_tokenKey);
+      final savedUserJson = prefs.getString(_userKey);
+      if (savedToken != null &&
+          savedToken.isNotEmpty &&
+          savedUserJson != null &&
+          savedUserJson.isNotEmpty) {
+        _token = savedToken;
+        _currentUser = UserModel.fromJson(
+          jsonDecode(savedUserJson) as Map<String, dynamic>,
+        );
+        notifyListeners();
+      }
+    } catch (_) {
+      // Ignora errores si los datos locales están corruptos.
+    }
   }
 
   Future<void> _clearLegacyCredentials() async {
@@ -114,6 +142,11 @@ class AuthProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('kpital_owner_password_v1');
       await prefs.remove('kpital_authenticated_user_v1');
+      await prefs.remove('kpital_user_accounts_v1');
+      await prefs.remove('kpital_transactions_v1');
+      await prefs.remove('kpital_debts_v1');
+      await prefs.remove('kpital_inventory_products_v1');
+      await prefs.remove('kpital_inventory_sales_v1');
     } catch (_) {
       // La sesión se administra en memoria aunque el almacenamiento no exista.
     }
@@ -143,6 +176,11 @@ class AuthProvider extends ChangeNotifier {
       if (token.isEmpty) throw const FormatException();
       _token = token;
       _currentUser = user;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_tokenKey, token);
+        await prefs.setString(_userKey, jsonEncode(user.toJson()));
+      } catch (_) {}
       notifyListeners();
       return true;
     } catch (_) {
@@ -155,6 +193,11 @@ class AuthProvider extends ChangeNotifier {
     final token = _token;
     _token = null;
     _currentUser = _guest;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenKey);
+      await prefs.remove(_userKey);
+    } catch (_) {}
     notifyListeners();
     if (token != null) await _post('logout', {}, token: token);
   }

@@ -6,12 +6,15 @@ import '../../accounts/providers/accounts_provider.dart';
 import '../../transactions/providers/transactions_provider.dart';
 
 class InventoryProvider extends ChangeNotifier {
-  static const String _productsStorageKey = 'kpital_inventory_products_v1';
-  static const String _salesStorageKey = 'kpital_inventory_sales_v1';
-
+  String _currentUserId = '';
   List<ProductModel> _products = [];
   List<ProductSaleRecord> _sales = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+
+  String get _productsStorageKey =>
+      'kpital_inventory_products_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
+  String get _salesStorageKey =>
+      'kpital_inventory_sales_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
 
   List<ProductModel> get products => List.unmodifiable(_products);
   List<ProductSaleRecord> get sales => List.unmodifiable(_sales);
@@ -38,8 +41,12 @@ class InventoryProvider extends ChangeNotifier {
   int get totalStockUnits =>
       _products.fold(0, (acc, item) => acc + item.stockUnits);
 
-  InventoryProvider() {
-    _loadData();
+  InventoryProvider();
+
+  Future<void> setUserId(String userId) async {
+    if (_currentUserId == userId && !_isLoading) return;
+    _currentUserId = userId;
+    await _loadData();
   }
 
   Future<void> _loadData() async {
@@ -47,6 +54,11 @@ class InventoryProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_currentUserId.isEmpty) {
+        _products = [];
+        _sales = [];
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       final productsString = prefs.getString(_productsStorageKey);
       final salesString = prefs.getString(_salesStorageKey);
@@ -55,57 +67,20 @@ class InventoryProvider extends ChangeNotifier {
         final List<dynamic> decoded = jsonDecode(productsString);
         _products = decoded.map((e) => ProductModel.fromJson(e as Map<String, dynamic>)).toList();
       } else {
-        // Datos semilla representativos de ferias y mercados bolivianos
-        final now = DateTime.now();
-        _products = [
-          ProductModel(
-            id: 'prod_1',
-            name: 'Parkas Térmicas de Invierno',
-            description: 'Fardo importado con forro polar',
-            batchPackageType: 'fardo',
-            batchQuantity: 100,
-            totalPurchaseCost: 3500.00,
-            unitCost: 35.00,
-            halfDozenCost: 210.00,
-            dozenCost: 420.00,
-            salePriceUnit: 65.00,       // Margen: 46.2%
-            salePriceHalfDozen: 340.00, // Margen: 38.2%
-            salePriceDozen: 600.00,     // Margen: 30.0%
-            stockUnits: 76,
-            minStockAlert: 10,
-            capitalInvested: 3500.00,
-            capitalRecovered: 2150.00,   // 61.4% recuperado
-            createdAt: now.subtract(const Duration(days: 15)),
-          ),
-          ProductModel(
-            id: 'prod_2',
-            name: 'Medias de Alpaca Térmicas',
-            description: 'Caja x120 pares surtidos',
-            batchPackageType: 'caja',
-            batchQuantity: 120,
-            totalPurchaseCost: 720.00,
-            unitCost: 6.00,
-            halfDozenCost: 36.00,
-            dozenCost: 72.00,
-            salePriceUnit: 12.00,       // Margen: 50.0%
-            salePriceHalfDozen: 60.00,  // Margen: 40.0%
-            salePriceDozen: 100.00,     // Margen: 28.0%
-            stockUnits: 48,
-            minStockAlert: 15,
-            capitalInvested: 720.00,
-            capitalRecovered: 860.00,    // 119.4% recuperado (¡Ganancia pura!)
-            createdAt: now.subtract(const Duration(days: 20)),
-          ),
-        ];
-        await _saveData();
+        // Base limpia para usuarios nuevos: no precargar productos demo
+        _products = [];
       }
 
       if (salesString != null && salesString.isNotEmpty) {
         final List<dynamic> decodedSales = jsonDecode(salesString);
         _sales = decodedSales.map((e) => ProductSaleRecord.fromJson(e as Map<String, dynamic>)).toList();
+      } else {
+        _sales = [];
       }
     } catch (e) {
       debugPrint('Error al cargar inventario: $e');
+      _products = [];
+      _sales = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -113,6 +88,7 @@ class InventoryProvider extends ChangeNotifier {
   }
 
   Future<void> _saveData() async {
+    if (_currentUserId.isEmpty) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final productsString = jsonEncode(_products.map((p) => p.toJson()).toList());

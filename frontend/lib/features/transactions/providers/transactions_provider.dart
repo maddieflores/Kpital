@@ -7,10 +7,12 @@ import '../../accounts/providers/accounts_provider.dart';
 enum DateFilterPeriod { all, today, thisWeek, thisMonth }
 
 class TransactionsProvider extends ChangeNotifier {
-  static const String _storageKey = 'kpital_transactions_v1';
-
+  String _currentUserId = '';
   List<TransactionModel> _transactions = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
+
+  String get _storageKey =>
+      'kpital_transactions_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
 
   // Filtros activos (CU-1.4)
   String _searchQuery = '';
@@ -141,8 +143,12 @@ class TransactionsProvider extends ChangeNotifier {
     return categoryMap.map((cat, amount) => MapEntry(cat, (amount / total) * 100));
   }
 
-  TransactionsProvider() {
-    _loadTransactions();
+  TransactionsProvider();
+
+  Future<void> setUserId(String userId) async {
+    if (_currentUserId == userId && !_isLoading) return;
+    _currentUserId = userId;
+    await _loadTransactions();
   }
 
   Future<void> _loadTransactions() async {
@@ -150,6 +156,10 @@ class TransactionsProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (_currentUserId.isEmpty) {
+        _transactions = [];
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       final dataString = prefs.getString(_storageKey);
 
@@ -158,68 +168,12 @@ class TransactionsProvider extends ChangeNotifier {
         _transactions = decoded.map((e) => TransactionModel.fromJson(e as Map<String, dynamic>)).toList();
         _transactions.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
       } else {
-        // Datos semilla representativos de transferencias en Bolivia
-        final now = DateTime.now();
-        _transactions = [
-          TransactionModel(
-            id: 'tx_demo_1',
-            accountId: 'acc_union',
-            accountName: 'Banco Unión (QR)',
-            type: TransactionType.income,
-            amount: 850.00,
-            currency: 'BOB',
-            contactName: 'Mariana Vargas',
-            description: 'Transferencia QR pedido mayorista',
-            category: 'Venta / Cliente',
-            transactionDate: now.subtract(const Duration(hours: 3)),
-            createdAt: now.subtract(const Duration(hours: 3)),
-          ),
-          TransactionModel(
-            id: 'tx_demo_2',
-            accountId: 'acc_bcp',
-            accountName: 'BCP Soli Pagos',
-            type: TransactionType.income,
-            amount: 320.00,
-            currency: 'BOB',
-            contactName: 'Carlos Mendoza',
-            description: 'Pago por 1 docena medias de invierno',
-            category: 'Venta Rápida',
-            transactionDate: now.subtract(const Duration(days: 1, hours: 2)),
-            createdAt: now.subtract(const Duration(days: 1, hours: 2)),
-          ),
-          TransactionModel(
-            id: 'tx_demo_3',
-            accountId: 'acc_efectivo',
-            accountName: 'Efectivo en mano',
-            type: TransactionType.expense,
-            amount: 45.00,
-            currency: 'BOB',
-            contactName: 'Puesto de jugos y empanadas',
-            description: 'Almuerzo al paso en la feria',
-            category: 'Gasto Hormiga',
-            isEssential: false,
-            transactionDate: now.subtract(const Duration(days: 1, hours: 5)),
-            createdAt: now.subtract(const Duration(days: 1, hours: 5)),
-          ),
-          TransactionModel(
-            id: 'tx_demo_4',
-            accountId: 'acc_union',
-            accountName: 'Banco Unión (QR)',
-            destinationAccountId: 'vault_fardo',
-            destinationAccountName: 'Bóveda: Fardo de Invierno',
-            type: TransactionType.transfer,
-            amount: 500.00,
-            currency: 'BOB',
-            description: 'Apartado de ganancia a bóveda',
-            category: 'Ahorro Bóveda',
-            transactionDate: now.subtract(const Duration(days: 2)),
-            createdAt: now.subtract(const Duration(days: 2)),
-          ),
-        ];
-        await _saveTransactions();
+        // Base limpia para usuarios nuevos: no precargar transacciones demo
+        _transactions = [];
       }
     } catch (e) {
       debugPrint('Error al cargar transacciones: $e');
+      _transactions = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -227,6 +181,7 @@ class TransactionsProvider extends ChangeNotifier {
   }
 
   Future<void> _saveTransactions() async {
+    if (_currentUserId.isEmpty) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final dataString = jsonEncode(_transactions.map((t) => t.toJson()).toList());

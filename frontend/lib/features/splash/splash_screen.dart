@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/widgets/kpital_logo.dart';
 import '../onboarding/onboarding_screen.dart';
+import '../auth/providers/auth_provider.dart';
+import '../../main.dart';
 
 /// Pantalla 1: Splash Screen
 /// Incorpora el logo oficial "K Ascendente" en squircle Violeta Premium #8261B8
@@ -40,20 +43,24 @@ class _SplashScreenState extends State<SplashScreen>
 
     _animController.forward();
 
-    // Auto-transición a Onboarding después de 2.4 segundos
+    // Auto-transición a Onboarding o Dashboard después de 2.4 segundos
     _navigationTimer = Timer(const Duration(milliseconds: 2400), () {
-      _goToOnboarding();
+      _goToNext();
     });
   }
 
-  void _goToOnboarding() {
+  void _goToNext() {
     if (!mounted) return;
     _navigationTimer?.cancel();
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final targetWidget = auth.isLoggedIn
+        ? const MainNavigationScreen()
+        : const OnboardingScreen();
+
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 600),
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const OnboardingScreen(),
+        pageBuilder: (context, animation, secondaryAnimation) => targetWidget,
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return FadeTransition(opacity: animation, child: child);
         },
@@ -71,7 +78,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: _goToOnboarding,
+      onTap: _goToNext,
       child: Scaffold(
         backgroundColor: Colors.white,
         body: Stack(

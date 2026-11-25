@@ -44,13 +44,25 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => AccountsProvider()),
-        ChangeNotifierProvider(create: (_) => TransactionsProvider()),
-        ChangeNotifierProvider(create: (_) => DebtsProvider()),
-        ChangeNotifierProvider(create: (_) => InventoryProvider()),
+        ChangeNotifierProxyProvider<AuthProvider, AccountsProvider>(
+          create: (_) => AccountsProvider(),
+          update: (_, auth, accounts) => (accounts ?? AccountsProvider())..setUserId(auth.currentUser.id),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, TransactionsProvider>(
+          create: (_) => TransactionsProvider(),
+          update: (_, auth, txs) => (txs ?? TransactionsProvider())..setUserId(auth.currentUser.id),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, DebtsProvider>(
+          create: (_) => DebtsProvider(),
+          update: (_, auth, debts) => (debts ?? DebtsProvider())..setUserId(auth.currentUser.id),
+        ),
+        ChangeNotifierProxyProvider<AuthProvider, InventoryProvider>(
+          create: (_) => InventoryProvider(),
+          update: (_, auth, inv) => (inv ?? InventoryProvider())..setUserId(auth.currentUser.id),
+        ),
         ChangeNotifierProxyProvider<AuthProvider, AdsProvider>(
           create: (_) => AdsProvider(),
-          update: (_, auth, ads) => ads!..assignOwner(auth.isOwner),
+          update: (_, auth, ads) => (ads ?? AdsProvider())..assignOwner(auth.isOwner),
         ),
       ],
       child: const KpitalApp(),
@@ -178,6 +190,14 @@ class DashboardScreen extends StatelessWidget {
     final accountsProvider = Provider.of<AccountsProvider>(context);
     final txProv = Provider.of<TransactionsProvider>(context);
     final inventoryProv = Provider.of<InventoryProvider>(context);
+    final authProv = Provider.of<AuthProvider>(context);
+    final user = authProv.currentUser;
+    final String greetingName = user.fullName.trim().isNotEmpty
+        ? user.fullName.trim().split(RegExp(r'\s+')).first
+        : (user.username.trim().isNotEmpty && user.username != 'invitado'
+            ? user.username
+            : 'Usuario');
+
     final primaryVault = accountsProvider.savingsVaults.isNotEmpty
         ? accountsProvider.savingsVaults.first
         : null;
@@ -214,7 +234,7 @@ class DashboardScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              "Hola, Alejandro",
+                              "Hola, $greetingName",
                               style: TextStyle(
                                 fontSize: 13,
                                 color: tokens.textSecondary,
