@@ -396,7 +396,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => const AppearanceScreen(initialTabIndex: 2),
+                        builder: (_) => const AppearanceScreen(),
                       ),
                     );
                   },
