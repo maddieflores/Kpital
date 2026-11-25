@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/services/finance_api_service.dart';
 import '../../../core/theme/app_design_tokens.dart';
 import '../models/account.dart';
 import '../providers/accounts_provider.dart';
@@ -22,9 +23,15 @@ class AccountsManagerScreen extends StatelessWidget {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () {
-              Provider.of<AccountsProvider>(context, listen: false).deleteAccount(account.id);
+            onPressed: () async {
+              final provider = context.read<AccountsProvider>();
+              final messenger = ScaffoldMessenger.of(context);
               Navigator.of(ctx).pop();
+              try {
+                await provider.deleteAccount(account.id);
+              } on FinanceSyncException catch (error) {
+                messenger.showSnackBar(SnackBar(content: Text(error.message)));
+              }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
           ),

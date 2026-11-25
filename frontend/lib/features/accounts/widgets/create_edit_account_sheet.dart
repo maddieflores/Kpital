@@ -1,3 +1,4 @@
+import '../../../core/services/finance_api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_design_tokens.dart';
@@ -97,7 +98,11 @@ class _CreateEditAccountSheetState extends State<CreateEditAccountSheet> {
     super.dispose();
   }
 
-  void _save() {
+  final _draftId = FinanceApiService.newId('acc');
+  bool _isSaving = false;
+
+  Future<void> _save() async {
+    if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
 
     final name = _nameController.text.trim();
@@ -108,27 +113,41 @@ class _CreateEditAccountSheetState extends State<CreateEditAccountSheet> {
 
     final provider = Provider.of<AccountsProvider>(context, listen: false);
 
-    if (widget.accountToEdit != null) {
-      final updated = widget.accountToEdit!.copyWith(
-        name: name,
-        type: _isVault ? AccountType.savingsVault : _selectedType,
-        balance: balance,
-        isSavingsVault: _isVault,
-        targetAmount: target,
-        colorHex: _selectedColorHex,
-      );
-      provider.updateAccount(updated);
-    } else {
-      provider.addAccount(
-        name: name,
-        type: _isVault ? AccountType.savingsVault : _selectedType,
-        initialBalance: balance,
-        isSavingsVault: _isVault,
-        targetAmount: target,
-        colorHex: _selectedColorHex,
-      );
+    setState(() => _isSaving = true);
+    try {
+      if (widget.accountToEdit != null) {
+        final updated = widget.accountToEdit!.copyWith(
+          name: name,
+          type: _isVault ? AccountType.savingsVault : _selectedType,
+          balance: balance,
+          isSavingsVault: _isVault,
+          targetAmount: target,
+          colorHex: _selectedColorHex,
+        );
+        await provider.updateAccount(updated, previousBalance: widget.accountToEdit!.balance);
+      } else {
+        await provider.addAccount(
+          accountId: _draftId,
+          name: name,
+          type: _isVault ? AccountType.savingsVault : _selectedType,
+          initialBalance: balance,
+          isSavingsVault: _isVault,
+          targetAmount: target,
+          colorHex: _selectedColorHex,
+        );
+      }
+    } on FinanceSyncException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
 
+    if (!mounted) return;
     Navigator.of(context).pop();
   }
 
@@ -494,7 +513,7 @@ class _CreateEditAccountSheetState extends State<CreateEditAccountSheet> {
 
               // Botón Guardar
               ElevatedButton(
-                onPressed: _save,
+                onPressed: _isSaving ? null : _save,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Color(int.parse('FF${_selectedColorHex.replaceAll('#', '')}', radix: 16)),
                   padding: const EdgeInsets.symmetric(vertical: 14),

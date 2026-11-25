@@ -1,3 +1,5 @@
+import '../../../core/services/finance_api_service.dart';
+import '../../transactions/models/transaction.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +12,10 @@ class InventoryProvider extends ChangeNotifier {
   List<ProductModel> _products = [];
   List<ProductSaleRecord> _sales = [];
   bool _isLoading = false;
+  String? _token;
+  Future<void>? _loading;
+  int _revision = 0;
+  String? syncError;
 
   String get _productsStorageKey =>
       'kpital_inventory_products_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
@@ -43,60 +49,79 @@ class InventoryProvider extends ChangeNotifier {
 
   InventoryProvider();
 
-  Future<void> setUserId(String userId) async {
-    if (_currentUserId == userId && !_isLoading) return;
+  void setAuthSession(String userId, String? token) {
+    if (_currentUserId == userId && _token == token) return;
+    if (_currentUserId != userId) {
+      _products = [];
+      _sales = [];
+    }
     _currentUserId = userId;
-    await _loadData();
+    _token = token;
+    syncError = null;
+    _loading = Future<void>.microtask(_loadData);
+  }
+
+  Future<void> synchronize() async {
+    await _loading;
+    if (_isLoading || _token == null) return;
+    _loading = _loadData();
+    await _loading;
   }
 
   Future<void> _loadData() async {
+    final token = _token;
+    final productsKey = _productsStorageKey;
+    final salesKey = _salesStorageKey;
+    final revision = _revision;
+    if (token == null) return;
     _isLoading = true;
-    notifyListeners();
-
     try {
-      if (_currentUserId.isEmpty) {
-        _products = [];
-        _sales = [];
-        return;
-      }
       final prefs = await SharedPreferences.getInstance();
-      final productsString = prefs.getString(_productsStorageKey);
-      final salesString = prefs.getString(_salesStorageKey);
-
-      if (productsString != null && productsString.isNotEmpty) {
-        final List<dynamic> decoded = jsonDecode(productsString);
-        _products = decoded.map((e) => ProductModel.fromJson(e as Map<String, dynamic>)).toList();
-      } else {
-        // Base limpia para usuarios nuevos: no precargar productos demo
-        _products = [];
-      }
-
-      if (salesString != null && salesString.isNotEmpty) {
-        final List<dynamic> decodedSales = jsonDecode(salesString);
-        _sales = decodedSales.map((e) => ProductSaleRecord.fromJson(e as Map<String, dynamic>)).toList();
-      } else {
-        _sales = [];
-      }
-    } catch (e) {
-      debugPrint('Error al cargar inventario: $e');
-      _products = [];
-      _sales = [];
+      if (token != _token || revision != _revision) return;
+      final products = (jsonDecode(prefs.getString(productsKey) ?? '[]') as List)
+          .cast<Map<String, dynamic>>();
+      final sales = (jsonDecode(prefs.getString(salesKey) ?? '[]') as List)
+          .cast<Map<String, dynamic>>();
+      _products = products.map(ProductModel.fromJson).toList();
+      _sales = sales.map(ProductSaleRecord.fromJson).toList();
+      final importedKey = '${productsKey}_imported';
+      final imported = prefs.getBool(importedKey) ?? false;
+      final cloud = await Future.wait([
+        FinanceApiService.syncRecords(token, 'products',
+            imported ? [] : _products.map((product) => product.toJson())),
+        FinanceApiService.syncRecords(token, 'sales',
+            imported ? [] : _sales.map((sale) => sale.toJson())),
+      ]);
+      if (token != _token || revision != _revision) return;
+      _products = cloud[0].map(ProductModel.fromJson).toList();
+      _sales = cloud[1].map(ProductSaleRecord.fromJson).toList()
+        ..sort((a, b) => b.saleDate.compareTo(a.saleDate));
+      await _saveData();
+      if (!imported) await prefs.setBool(importedKey, true);
+      if (token == _token) syncError = null;
+    } on FinanceSyncException catch (error) {
+      if (token == _token) syncError = error.message;
+    } catch (_) {
+      if (token == _token) syncError = 'No se pudo sincronizar el inventario.';
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (token == _token) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> _saveData() async {
-    if (_currentUserId.isEmpty) return;
+    final productsKey = _productsStorageKey;
+    final salesKey = _salesStorageKey;
+    final products = jsonEncode(_products.map((product) => product.toJson()).toList());
+    final sales = jsonEncode(_sales.map((sale) => sale.toJson()).toList());
     try {
       final prefs = await SharedPreferences.getInstance();
-      final productsString = jsonEncode(_products.map((p) => p.toJson()).toList());
-      final salesString = jsonEncode(_sales.map((s) => s.toJson()).toList());
-      await prefs.setString(_productsStorageKey, productsString);
-      await prefs.setString(_salesStorageKey, salesString);
-    } catch (e) {
-      debugPrint('Error al guardar inventario: $e');
+      await prefs.setString(productsKey, products);
+      await prefs.setString(salesKey, sales);
+    } catch (error) {
+      debugPrint('Error al guardar la copia local de inventario: $error');
     }
   }
 
@@ -114,6 +139,8 @@ class InventoryProvider extends ChangeNotifier {
     required double salePriceDozen,
     int minStockAlert = 5,
     String? paidFromAccountId,
+    required String productId,
+    required DateTime createdAt,
     AccountsProvider? accountsProvider,
     TransactionsProvider? transactionsProvider,
   }) async {
@@ -123,7 +150,7 @@ class InventoryProvider extends ChangeNotifier {
     final dozenCost = double.parse((unitCost * 12).toStringAsFixed(2));
 
     final newProduct = ProductModel(
-      id: 'prod_${DateTime.now().millisecondsSinceEpoch}',
+      id: productId,
       name: name.trim(),
       description: description?.trim(),
       batchPackageType: batchPackageType,
@@ -139,27 +166,39 @@ class InventoryProvider extends ChangeNotifier {
       minStockAlert: minStockAlert,
       capitalInvested: totalPurchaseCost,
       capitalRecovered: 0.0,
-      createdAt: DateTime.now(),
+      createdAt: createdAt,
     );
 
-    _products.insert(0, newProduct);
-    await _saveData();
-
-    // Si se pagó con una cuenta bancaria/efectivo, se descuenta y se registra el egreso
-    if (paidFromAccountId != null && accountsProvider != null && transactionsProvider != null) {
-      final acc = accountsProvider.accounts.firstWhere((a) => a.id == paidFromAccountId);
-      await transactionsProvider.recordExpense(
-        accountsProvider: accountsProvider,
-        accountId: paidFromAccountId,
-        accountName: acc.name,
+    final token = FinanceApiService.requireSession(_token);
+    TransactionModel? transaction;
+    if (paidFromAccountId != null && accountsProvider != null) {
+      await accountsProvider.waitForCloud();
+      final account = accountsProvider.accounts.where((a) => a.id == paidFromAccountId).firstOrNull;
+      if (account == null) {
+        throw const FinanceSyncException('La cuenta de pago ya no está disponible.');
+      }
+      transaction = TransactionModel(
+        id: productId,
+        accountId: account.id,
+        accountName: account.name,
+        type: TransactionType.expense,
         amount: totalPurchaseCost,
         description: 'Compra de lote mayorista: $name ($batchQuantity $batchPackageType)',
         category: 'Insumos / Mercadería',
-        isEssential: true,
+        transactionDate: createdAt,
+        createdAt: createdAt,
       );
     }
-
-    notifyListeners();
+    if (token != _token) {
+      throw const FinanceSyncException('La sesión cambió. Vuelve a abrir el formulario.');
+    }
+    await FinanceApiService.saveRecords(token, [
+      FinanceRecordChange('products', newProduct.id, newProduct.toJson()),
+    ], transaction: transaction);
+    if (token == _token) {
+      await accountsProvider?.synchronize();
+      await Future.wait([synchronize(), if (transactionsProvider != null) transactionsProvider.synchronize()]);
+    }
     return newProduct;
   }
 
@@ -172,6 +211,7 @@ class InventoryProvider extends ChangeNotifier {
     double? customPrice,
     required String accountId,
     required String accountName,
+    required String saleId,
     String paymentMethod = 'QR',
     required AccountsProvider accountsProvider,
     required TransactionsProvider transactionsProvider,
@@ -210,14 +250,14 @@ class InventoryProvider extends ChangeNotifier {
     final profitAmount = double.parse((totalSaleAmount - costOfSoldItems).toStringAsFixed(2));
 
     // 1. Actualizar stock y métrica de capital recuperado del producto (CU-5.4 & CU-5.5)
-    _products[index] = product.copyWith(
+    final updated = product.copyWith(
       stockUnits: product.stockUnits - unitsToDeduct,
       capitalRecovered: product.capitalRecovered + totalSaleAmount,
     );
 
     // 2. Registrar venta en historial de ventas
     final saleRecord = ProductSaleRecord(
-      id: 'sale_${DateTime.now().millisecondsSinceEpoch}',
+      id: saleId,
       productId: product.id,
       productName: product.name,
       scale: scale,
@@ -232,27 +272,42 @@ class InventoryProvider extends ChangeNotifier {
       saleDate: DateTime.now(),
     );
 
-    _sales.insert(0, saleRecord);
-    await _saveData();
-
-
-    // 4. Registra la transacción de ingreso en el historial general
-    await transactionsProvider.recordIncome(
-      accountsProvider: accountsProvider,
+    final token = FinanceApiService.requireSession(_token);
+    await accountsProvider.waitForCloud();
+    if (token != _token) return false;
+    final productName = product.name;
+    await FinanceApiService.saveRecords(token, [
+      FinanceRecordChange('products', updated.id, updated.toJson(), previous: product.toJson()),
+      FinanceRecordChange('sales', saleRecord.id, saleRecord.toJson()),
+    ], transaction: TransactionModel(
+      id: saleId,
       accountId: accountId,
       accountName: accountName,
+      type: TransactionType.income,
       amount: totalSaleAmount,
-      contactName: 'Venta Negocio: ${product.name}',
-      description: 'Venta de $scaleQuantity ${scale.label} por $paymentMethod ($unitsToDeduct u.)',
+      contactName: 'Venta Negocio: $productName',
+      description: 'Venta por $paymentMethod ($unitsToDeduct u.)',
       category: 'Venta de Negocio',
-    );
-
-    notifyListeners();
+      transactionDate: saleRecord.saleDate,
+      createdAt: saleRecord.saleDate,
+    ));
+    if (token == _token) {
+      await accountsProvider.synchronize();
+      await Future.wait([synchronize(), transactionsProvider.synchronize()]);
+    }
     return true;
   }
 
   /// Eliminar producto del inventario
   Future<void> deleteProduct(String productId) async {
+    final token = FinanceApiService.requireSession(_token);
+    final product = _products.where((p) => p.id == productId).firstOrNull;
+    if (product == null) return;
+    await FinanceApiService.saveRecords(token, [
+      FinanceRecordChange('products', productId, null, previous: product.toJson()),
+    ]);
+    if (token != _token) return;
+    _revision++;
     _products.removeWhere((p) => p.id == productId);
     await _saveData();
     notifyListeners();

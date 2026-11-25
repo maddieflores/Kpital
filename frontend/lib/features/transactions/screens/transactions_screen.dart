@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../../core/services/finance_api_service.dart';
 import '../../../core/theme/app_design_tokens.dart';
 import '../../accounts/providers/accounts_provider.dart';
 import '../models/transaction.dart';
@@ -316,15 +317,20 @@ class TransactionsScreen extends StatelessWidget {
                                   icon: Icon(Icons.more_vert, size: 18, color: tokens.textSecondary),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                                   color: tokens.cardBg,
-                                  onSelected: (val) {
+                                  onSelected: (val) async {
                                     if (val == 'delete') {
-                                      txProv.deleteTransaction(
-                                        transactionId: tx.id,
-                                        accountsProvider: accountsProv,
-                                      );
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Movimiento eliminado y saldo recalculado.')),
-                                      );
+                                      final messenger = ScaffoldMessenger.of(context);
+                                      try {
+                                        await txProv.deleteTransaction(
+                                          transactionId: tx.id,
+                                          accountsProvider: accountsProv,
+                                        );
+                                        messenger.showSnackBar(
+                                          const SnackBar(content: Text('Movimiento eliminado y saldo recalculado.')),
+                                        );
+                                      } on FinanceSyncException catch (error) {
+                                        messenger.showSnackBar(SnackBar(content: Text(error.message)));
+                                      }
                                     }
                                   },
                                   itemBuilder: (_) => [

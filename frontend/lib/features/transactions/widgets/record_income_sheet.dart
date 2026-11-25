@@ -1,3 +1,4 @@
+import '../../../core/services/finance_api_service.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +42,7 @@ class _RecordIncomeSheetState extends State<RecordIncomeSheet> {
 
   String? _receiptImagePath;
   final ImagePicker _picker = ImagePicker();
+  final _draftId = FinanceApiService.newId('tx');
   bool _isSaving = false;
 
   final List<String> _contactSuggestions = [
@@ -141,22 +143,31 @@ class _RecordIncomeSheetState extends State<RecordIncomeSheet> {
       _selectedTime.minute,
     );
 
-    await txProv.recordIncome(
-      accountsProvider: accountsProv,
-      accountId: account.id,
-      accountName: account.name,
-      amount: amount,
-      contactName: _contactController.text,
-      description: _descriptionController.text.isNotEmpty
-          ? _descriptionController.text
-          : 'Transferencia recibida',
-      receiptImagePath: _receiptImagePath,
-      transactionDate: fullDateTime,
-      category: 'Transferencia QR / Ingreso',
-    );
-
-    setState(() => _isSaving = false);
-
+    try {
+      await txProv.recordIncome(
+        transactionId: _draftId,
+        accountsProvider: accountsProv,
+        accountId: account.id,
+        accountName: account.name,
+        amount: amount,
+        contactName: _contactController.text,
+        description: _descriptionController.text.isNotEmpty
+            ? _descriptionController.text
+            : 'Transferencia recibida',
+        receiptImagePath: _receiptImagePath,
+        transactionDate: fullDateTime,
+        category: 'Transferencia QR / Ingreso',
+      );
+    } on FinanceSyncException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
     if (mounted) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(

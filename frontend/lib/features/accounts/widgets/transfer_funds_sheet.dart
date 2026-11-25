@@ -1,3 +1,5 @@
+import '../../../core/services/finance_api_service.dart';
+import '../../transactions/providers/transactions_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_design_tokens.dart';
@@ -39,6 +41,7 @@ class _TransferFundsSheetState extends State<TransferFundsSheet> {
 
   String? _originId;
   String? _destinationId;
+  final _draftId = FinanceApiService.newId('tx');
   bool _isTransferring = false;
 
   @override
@@ -80,34 +83,29 @@ class _TransferFundsSheetState extends State<TransferFundsSheet> {
 
     setState(() => _isTransferring = true);
     final provider = Provider.of<AccountsProvider>(context, listen: false);
-    final success = await provider.transferFunds(
-      originAccountId: _originId!,
-      destinationAccountId: _destinationId!,
-      amount: amount,
-    );
-
-    setState(() => _isTransferring = false);
-
-    if (mounted) {
-      if (success) {
-        Navigator.of(context).pop();
+    try {
+      await context.read<TransactionsProvider>().recordTransfer(
+        accountsProvider: provider,
+        originAccountId: _originId!,
+        destinationAccountId: _destinationId!,
+        amount: amount,
+        transactionId: _draftId,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transferencia guardada en la nube.')),
+      );
+    } on FinanceSyncException catch (error) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF10B981),
-            content: Text('Transferencia de Bs ${amount.toStringAsFixed(2)} realizada exitosamente.'),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Colors.redAccent,
-            content: Text('Saldo insuficiente en la cuenta de origen.'),
-          ),
+          SnackBar(content: Text(error.message)),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isTransferring = false);
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;

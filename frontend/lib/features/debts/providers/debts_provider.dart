@@ -1,3 +1,5 @@
+import '../../../core/services/finance_api_service.dart';
+import '../../transactions/models/transaction.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +11,10 @@ class DebtsProvider extends ChangeNotifier {
   String _currentUserId = '';
   List<DebtModel> _debts = [];
   bool _isLoading = false;
+  String? _token;
+  Future<void>? _loading;
+  int _revision = 0;
+  String? syncError;
 
   String get _storageKey =>
       'kpital_debts_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
@@ -38,48 +44,63 @@ class DebtsProvider extends ChangeNotifier {
 
   DebtsProvider();
 
-  Future<void> setUserId(String userId) async {
-    if (_currentUserId == userId && !_isLoading) return;
+  void setAuthSession(String userId, String? token) {
+    if (_currentUserId == userId && _token == token) return;
+    if (_currentUserId != userId) _debts = [];
     _currentUserId = userId;
-    await _loadDebts();
+    _token = token;
+    syncError = null;
+    _loading = Future<void>.microtask(_loadDebts);
+  }
+
+  Future<void> synchronize() async {
+    await _loading;
+    if (_isLoading || _token == null) return;
+    _loading = _loadDebts();
+    await _loading;
   }
 
   Future<void> _loadDebts() async {
+    final token = _token;
+    final key = _storageKey;
+    final revision = _revision;
+    if (token == null) return;
     _isLoading = true;
-    notifyListeners();
-
     try {
-      if (_currentUserId.isEmpty) {
-        _debts = [];
-        return;
-      }
       final prefs = await SharedPreferences.getInstance();
-      final dataString = prefs.getString(_storageKey);
-
-      if (dataString != null && dataString.isNotEmpty) {
-        final List<dynamic> decoded = jsonDecode(dataString);
-        _debts = decoded.map((e) => DebtModel.fromJson(e as Map<String, dynamic>)).toList();
-      } else {
-        // Base limpia para usuarios nuevos: no precargar deudas demo
-        _debts = [];
-      }
-    } catch (e) {
-      debugPrint('Error al cargar deudas: $e');
-      _debts = [];
+      if (token != _token || revision != _revision) return;
+      final stored = jsonDecode(prefs.getString(key) ?? '[]') as List;
+      _debts = stored.cast<Map<String, dynamic>>().map(DebtModel.fromJson).toList();
+      final importedKey = '${key}_imported';
+      final imported = prefs.getBool(importedKey) ?? false;
+      final cloud = await FinanceApiService.syncRecords(
+        token, 'debts', imported ? [] : _debts.map((debt) => debt.toJson()),
+      );
+      if (token != _token || revision != _revision) return;
+      _debts = cloud.map(DebtModel.fromJson).toList();
+      await _saveDebts();
+      if (!imported) await prefs.setBool(importedKey, true);
+      if (token == _token) syncError = null;
+    } on FinanceSyncException catch (error) {
+      if (token == _token) syncError = error.message;
+    } catch (_) {
+      if (token == _token) syncError = 'No se pudieron sincronizar las deudas.';
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (token == _token) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
   Future<void> _saveDebts() async {
-    if (_currentUserId.isEmpty) return;
+    final key = _storageKey;
+    final data = jsonEncode(_debts.map((debt) => debt.toJson()).toList());
     try {
       final prefs = await SharedPreferences.getInstance();
-      final dataString = jsonEncode(_debts.map((d) => d.toJson()).toList());
-      await prefs.setString(_storageKey, dataString);
-    } catch (e) {
-      debugPrint('Error al guardar deudas: $e');
+      await prefs.setString(key, data);
+    } catch (error) {
+      debugPrint('Error al guardar la copia local de deudas: $error');
     }
   }
 
@@ -91,9 +112,11 @@ class DebtsProvider extends ChangeNotifier {
     required double totalAmount,
     DateTime? dueDate,
     String? concept,
+    String? debtId,
+    required DateTime createdAt,
   }) async {
     final newDebt = DebtModel(
-      id: 'debt_${DateTime.now().millisecondsSinceEpoch}',
+      id: debtId ?? FinanceApiService.newId('debt'),
       type: type,
       personName: personName.trim(),
       phoneNumber: phoneNumber?.trim(),
@@ -102,9 +125,16 @@ class DebtsProvider extends ChangeNotifier {
       dueDate: dueDate,
       concept: concept?.trim(),
       status: DebtStatus.pending,
-      createdAt: DateTime.now(),
+      createdAt: createdAt,
     );
 
+    final token = FinanceApiService.requireSession(_token);
+    await FinanceApiService.saveRecords(token, [
+      FinanceRecordChange('debts', newDebt.id, newDebt.toJson()),
+    ]);
+    if (token != _token) return;
+    _revision++;
+    _debts.removeWhere((debt) => debt.id == newDebt.id);
     _debts.insert(0, newDebt);
     await _saveDebts();
     notifyListeners();
@@ -120,6 +150,7 @@ class DebtsProvider extends ChangeNotifier {
     required AccountsProvider accountsProvider,
     required TransactionsProvider transactionsProvider,
     String? note,
+    required String paymentId,
   }) async {
     final index = _debts.indexWhere((d) => d.id == debtId);
     if (index == -1 || paymentAmount <= 0) return false;
@@ -130,7 +161,7 @@ class DebtsProvider extends ChangeNotifier {
     final isFullyPaid = newRemaining <= 0.01;
 
     final newPayment = DebtPayment(
-      id: 'pay_${DateTime.now().millisecondsSinceEpoch}',
+      id: paymentId,
       amount: actualPayment,
       date: DateTime.now(),
       accountId: accountId,
@@ -140,47 +171,47 @@ class DebtsProvider extends ChangeNotifier {
 
     final updatedPayments = List<DebtPayment>.from(debt.payments)..add(newPayment);
 
-    _debts[index] = debt.copyWith(
+    final updated = debt.copyWith(
       remainingAmount: newRemaining,
       status: isFullyPaid ? DebtStatus.paid : DebtStatus.partial,
       payments: updatedPayments,
     );
 
-    await _saveDebts();
-
-    // EFECTO AUTOMÁTICO EN CUENTAS Y TRANSACCIONES (CU-3.2)
-    if (debt.type == DebtType.receivable) {
-
-      // 2. Crea la transacción de ingreso en el historial
-      await transactionsProvider.recordIncome(
-        accountsProvider: accountsProvider,
-        accountId: accountId,
-        accountName: accountName,
-        amount: actualPayment,
-        contactName: debt.personName,
-        description: 'Abono de deuda: ${debt.concept ?? "Cobro parcial"}',
-        category: 'Abono de Deuda (Cobro)',
-      );
-    } else {
-
-      await transactionsProvider.recordExpense(
-        accountsProvider: accountsProvider,
-        accountId: accountId,
-        accountName: accountName,
-        amount: actualPayment,
-        contactName: debt.personName,
-        description: 'Pago de deuda/cuota: ${debt.concept ?? "Proveedor"}',
-        category: 'Pago a Proveedor / Deuda',
-        isEssential: true,
-      );
+    final token = FinanceApiService.requireSession(_token);
+    await accountsProvider.waitForCloud();
+    if (token != _token) return false;
+    final income = debt.type == DebtType.receivable;
+    await FinanceApiService.saveRecords(token, [
+      FinanceRecordChange('debts', debt.id, updated.toJson(), previous: debt.toJson()),
+    ], transaction: TransactionModel(
+      id: paymentId,
+      accountId: accountId,
+      accountName: accountName,
+      type: income ? TransactionType.income : TransactionType.expense,
+      amount: actualPayment,
+      contactName: debt.personName,
+      description: debt.concept,
+      category: income ? 'Abono de Deuda (Cobro)' : 'Pago a Proveedor / Deuda',
+      transactionDate: newPayment.date,
+      createdAt: newPayment.date,
+    ));
+    if (token == _token) {
+      await accountsProvider.synchronize();
+      await Future.wait([synchronize(), transactionsProvider.synchronize()]);
     }
-
-    notifyListeners();
     return true;
   }
 
   /// Eliminar deuda
   Future<void> deleteDebt(String debtId) async {
+    final token = FinanceApiService.requireSession(_token);
+    final debt = _debts.where((d) => d.id == debtId).firstOrNull;
+    if (debt == null) return;
+    await FinanceApiService.saveRecords(token, [
+      FinanceRecordChange('debts', debtId, null, previous: debt.toJson()),
+    ]);
+    if (token != _token) return;
+    _revision++;
     _debts.removeWhere((d) => d.id == debtId);
     await _saveDebts();
     notifyListeners();

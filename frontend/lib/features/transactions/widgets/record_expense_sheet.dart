@@ -1,3 +1,4 @@
+import '../../../core/services/finance_api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -36,6 +37,7 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
   String _selectedCategory = 'Alquiler';
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
+  final _draftId = FinanceApiService.newId('tx');
   bool _isSaving = false;
 
   final List<String> _fixedCategories = [
@@ -122,19 +124,28 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
       _selectedTime.minute,
     );
 
-    await txProv.recordExpense(
-      accountsProvider: accountsProv,
-      accountId: account.id,
-      accountName: account.name,
-      amount: amount,
-      description: _descriptionController.text.trim(),
-      category: _selectedCategory,
-      isEssential: _isEssential,
-      transactionDate: fullDateTime,
-    );
-
-    setState(() => _isSaving = false);
-
+    try {
+      await txProv.recordExpense(
+        transactionId: _draftId,
+        accountsProvider: accountsProv,
+        accountId: account.id,
+        accountName: account.name,
+        amount: amount,
+        description: _descriptionController.text.trim(),
+        category: _selectedCategory,
+        isEssential: _isEssential,
+        transactionDate: fullDateTime,
+      );
+    } on FinanceSyncException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
     if (mounted) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -56,18 +58,20 @@ void main() async {
           update: (_, auth, accounts) => (accounts ?? AccountsProvider())
             ..setAuthSession(userId: auth.currentUser.id, token: auth.token),
         ),
-        ChangeNotifierProxyProvider<AuthProvider, TransactionsProvider>(
+        ChangeNotifierProxyProvider2<AuthProvider, AccountsProvider, TransactionsProvider>(
           create: (_) => TransactionsProvider(),
-          update: (_, auth, txs) => (txs ?? TransactionsProvider())
-            ..setAuthSession(userId: auth.currentUser.id, token: auth.token),
+          update: (_, auth, accounts, txs) => (txs ?? TransactionsProvider())
+            ..setAuthSession(userId: auth.currentUser.id, token: auth.token, accountsProvider: accounts),
         ),
         ChangeNotifierProxyProvider<AuthProvider, DebtsProvider>(
           create: (_) => DebtsProvider(),
-          update: (_, auth, debts) => (debts ?? DebtsProvider())..setUserId(auth.currentUser.id),
+          update: (_, auth, debts) => (debts ?? DebtsProvider())
+            ..setAuthSession(auth.currentUser.id, auth.token),
         ),
         ChangeNotifierProxyProvider<AuthProvider, InventoryProvider>(
           create: (_) => InventoryProvider(),
-          update: (_, auth, inv) => (inv ?? InventoryProvider())..setUserId(auth.currentUser.id),
+          update: (_, auth, inv) => (inv ?? InventoryProvider())
+            ..setAuthSession(auth.currentUser.id, auth.token),
         ),
         ChangeNotifierProxyProvider<AuthProvider, AdsProvider>(
           create: (_) => AdsProvider(),
@@ -102,8 +106,55 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends State<MainNavigationScreen>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
+  Timer? _syncTimer;
+  bool _syncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _syncTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        unawaited(_synchronize());
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_synchronize());
+  }
+
+  Future<void> _synchronize() async {
+    if (!mounted || _syncing || !context.read<AuthProvider>().isLoggedIn) return;
+    _syncing = true;
+    final accounts = context.read<AccountsProvider>();
+    final movements = context.read<TransactionsProvider>();
+    final debts = context.read<DebtsProvider>();
+    final inventory = context.read<InventoryProvider>();
+    try {
+      await Future.wait([
+        () async {
+          await accounts.synchronize();
+          await movements.synchronize();
+        }(),
+        debts.synchronize(),
+        inventory.synchronize(),
+      ]);
+    } finally {
+      _syncing = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 
   final List<Widget> _screens = [
     const DashboardScreen(),
@@ -114,8 +165,28 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final syncError = context.watch<AccountsProvider>().syncError ??
+        context.watch<TransactionsProvider>().syncError ??
+        context.watch<DebtsProvider>().syncError ??
+        context.watch<InventoryProvider>().syncError;
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: Column(
+        children: [
+          if (syncError != null)
+            SafeArea(
+              bottom: false,
+              child: ListTile(
+                leading: const Icon(Icons.cloud_off_outlined),
+                title: Text(syncError),
+                trailing: TextButton(
+                  onPressed: _synchronize,
+                  child: const Text('Sincronizar'),
+                ),
+              ),
+            ),
+          Expanded(child: _screens[_currentIndex]),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/finance_api_service.dart';
 import '../../core/theme/app_design_tokens.dart';
 import '../ads/providers/ads_provider.dart';
 import '../ads/widgets/ad_banner_widget.dart';
@@ -22,6 +23,9 @@ class _PricingCalculatorScreenState extends State<PricingCalculatorScreen> {
   String _selectedCountry = "BO"; // Bolivia por defecto
   bool _isLoading = false;
   PricingAIResult? _analysisResult;
+  bool _savingInventory = false;
+  String? _productDraftId;
+  DateTime? _productDraftDate;
 
   final List<String> _productSuggestions = [
     'Fardo Parkas Térmicas',
@@ -76,25 +80,42 @@ class _PricingCalculatorScreenState extends State<PricingCalculatorScreen> {
     setState(() {
       _analysisResult = result;
       _isLoading = false;
+      _productDraftId = null;
+      _productDraftDate = null;
     });
   }
 
-  void _saveToInventory() {
-    if (_analysisResult == null) return;
+  Future<void> _saveToInventory() async {
+    if (_analysisResult == null || _savingInventory) return;
 
     final inventoryProv = Provider.of<InventoryProvider>(context, listen: false);
     final res = _analysisResult!;
 
-    inventoryProv.addProductBatch(
-      name: res.productName,
-      batchPackageType: 'fardo',
-      batchQuantity: int.tryParse(_unitsController.text) ?? 50,
-      totalPurchaseCost: double.tryParse(_totalCostController.text) ?? 1000.0,
-      salePriceUnit: res.suggestedUnitPrice,
-      salePriceHalfDozen: res.suggestedHalfDozenPrice,
-      salePriceDozen: res.suggestedDozenPrice,
-    );
+    _savingInventory = true;
+    try {
+      await inventoryProv.addProductBatch(
+        productId: _productDraftId ??= FinanceApiService.newId('prod'),
+        createdAt: _productDraftDate ??= DateTime.now(),
+        name: res.productName,
+        batchPackageType: 'fardo',
+        batchQuantity: int.tryParse(_unitsController.text) ?? 50,
+        totalPurchaseCost: double.tryParse(_totalCostController.text.replaceAll(',', '.')) ?? 1000.0,
+        salePriceUnit: res.suggestedUnitPrice,
+        salePriceHalfDozen: res.suggestedHalfDozenPrice,
+        salePriceDozen: res.suggestedDozenPrice,
+      );
+      _productDraftId = null;
+      _productDraftDate = null;
+    } on FinanceSyncException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+      return;
+    } finally {
+      _savingInventory = false;
+    }
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: const Color(0xFF10B981),

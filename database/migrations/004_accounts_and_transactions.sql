@@ -58,6 +58,15 @@ CREATE TABLE IF NOT EXISTS public.accounts (
 
 ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS target_amount NUMERIC(14, 2);
 ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS color_hex VARCHAR(10) DEFAULT '#3366D6';
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS public.finance_records (
+    user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    collection TEXT NOT NULL CHECK (collection IN ('debts', 'products', 'sales')),
+    id VARCHAR(64) NOT NULL,
+    data JSONB,
+    PRIMARY KEY (user_id, collection, id)
+);
 
 CREATE TABLE IF NOT EXISTS public.transactions (
     id VARCHAR(64) PRIMARY KEY,

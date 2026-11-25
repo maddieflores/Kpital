@@ -1,3 +1,4 @@
+import '../../../core/services/finance_api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_design_tokens.dart';
@@ -34,6 +35,8 @@ class _CreateBatchProductSheetState extends State<CreateBatchProductSheet> {
 
   String _packageType = 'fardo';
   String? _paidFromAccountId;
+  final _draftId = FinanceApiService.newId('prod');
+  final _createdAt = DateTime.now();
   bool _isSaving = false;
 
   final List<String> _packageOptions = ['fardo', 'caja', 'docena', 'paquete', 'bolsa'];
@@ -104,21 +107,32 @@ class _CreateBatchProductSheetState extends State<CreateBatchProductSheet> {
     final accountsProv = Provider.of<AccountsProvider>(context, listen: false);
     final txProv = Provider.of<TransactionsProvider>(context, listen: false);
 
-    await inventoryProv.addProductBatch(
-      name: _nameController.text,
-      description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
-      batchPackageType: _packageType,
-      batchQuantity: qty,
-      totalPurchaseCost: cost,
-      salePriceUnit: saleUnit,
-      salePriceHalfDozen: saleHalfDozen > 0 ? saleHalfDozen : saleUnit * 6,
-      salePriceDozen: saleDozen > 0 ? saleDozen : saleUnit * 12,
-      paidFromAccountId: _paidFromAccountId,
-      accountsProvider: accountsProv,
-      transactionsProvider: txProv,
-    );
-
-    setState(() => _isSaving = false);
+    try {
+      await inventoryProv.addProductBatch(
+        productId: _draftId,
+        createdAt: _createdAt,
+        name: _nameController.text,
+        description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
+        batchPackageType: _packageType,
+        batchQuantity: qty,
+        totalPurchaseCost: cost,
+        salePriceUnit: saleUnit,
+        salePriceHalfDozen: saleHalfDozen > 0 ? saleHalfDozen : saleUnit * 6,
+        salePriceDozen: saleDozen > 0 ? saleDozen : saleUnit * 12,
+        paidFromAccountId: _paidFromAccountId,
+        accountsProvider: accountsProv,
+        transactionsProvider: txProv,
+      );
+    } on FinanceSyncException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
 
     if (mounted) {
       Navigator.of(context).pop();

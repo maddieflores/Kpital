@@ -1,3 +1,4 @@
+import '../../../core/services/finance_api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -35,6 +36,8 @@ class _CreateDebtSheetState extends State<CreateDebtSheet> {
 
   late DebtType _selectedType;
   DateTime? _dueDate;
+  final _draftId = FinanceApiService.newId('debt');
+  final _createdAt = DateTime.now();
   bool _isSaving = false;
 
   final List<String> _receivablePresets = [
@@ -90,16 +93,27 @@ class _CreateDebtSheetState extends State<CreateDebtSheet> {
 
     final debtsProv = Provider.of<DebtsProvider>(context, listen: false);
 
-    await debtsProv.addDebt(
-      type: _selectedType,
-      personName: _personController.text,
-      phoneNumber: _phoneController.text.isNotEmpty ? _phoneController.text : null,
-      totalAmount: amount,
-      dueDate: _dueDate,
-      concept: _conceptController.text.isNotEmpty ? _conceptController.text : null,
-    );
-
-    setState(() => _isSaving = false);
+    try {
+      await debtsProv.addDebt(
+        debtId: _draftId,
+        createdAt: _createdAt,
+        type: _selectedType,
+        personName: _personController.text,
+        phoneNumber: _phoneController.text.isNotEmpty ? _phoneController.text : null,
+        totalAmount: amount,
+        dueDate: _dueDate,
+        concept: _conceptController.text.isNotEmpty ? _conceptController.text : null,
+      );
+    } on FinanceSyncException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
 
     if (mounted) {
       Navigator.of(context).pop();

@@ -10,12 +10,16 @@ class AccountsProvider extends ChangeNotifier {
   String? _authToken;
   List<Account> _accounts = [];
   bool _isLoading = false;
+  Future<void>? _sessionLoad;
+  int _revision = 0;
+  String? _syncError;
 
   String get _storageKey =>
       'kpital_accounts_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
 
   List<Account> get accounts => List.unmodifiable(_accounts);
   bool get isLoading => _isLoading;
+  String? get syncError => _syncError;
 
   /// Cuentas operativas del día a día (Efectivo, Bancos, Billeteras)
   List<Account> get operationalAccounts =>
@@ -48,15 +52,32 @@ class AccountsProvider extends ChangeNotifier {
     final tokenChanged = _authToken != token;
     if (!userChanged && !tokenChanged) return;
     if (userChanged) _accounts = [];
+    _syncError = null;
     _currentUserId = userId;
     _authToken = token;
-    await _loadAccounts();
+    final load = Future<void>.microtask(_loadAccounts);
+    _sessionLoad = load;
+    await load;
+  }
+
+  Future<void> waitForCloud() async {
+    await _sessionLoad;
+    if (_syncError != null) throw FinanceSyncException(_syncError!);
+  }
+
+  Future<void> synchronize() async {
+    await _sessionLoad;
+    if (_isLoading || _authToken == null) return;
+    final load = _loadAccounts();
+    _sessionLoad = load;
+    await load;
   }
 
   Future<void> _loadAccounts() async {
     final userId = _currentUserId;
     final token = _authToken;
     final storageKey = _storageKey;
+    final revision = _revision;
     bool sessionIsCurrent() => _currentUserId == userId && _authToken == token;
     _isLoading = true;
     notifyListeners();
@@ -71,18 +92,21 @@ class AccountsProvider extends ChangeNotifier {
         final decoded = jsonDecode(stored) as List<dynamic>;
         loaded = decoded.map((item) => Account.fromJson(item as Map<String, dynamic>)).toList();
       }
+      if (_revision == revision) _accounts = loaded;
       if (token != null && token.isNotEmpty) {
-        final cloud = await FinanceApiService.syncAccounts(token, loaded);
-        if (!sessionIsCurrent()) return;
-        if (cloud != null) {
-          loaded = cloud;
-          await prefs.setString(storageKey, jsonEncode(loaded.map((item) => item.toJson()).toList()));
-          if (!sessionIsCurrent()) return;
-        }
+        final importedKey = '${storageKey}_imported';
+        final imported = prefs.getBool(importedKey) ?? false;
+        final cloud = await FinanceApiService.syncAccounts(token, imported ? [] : loaded);
+        if (!sessionIsCurrent() || _revision != revision) return;
+        _accounts = cloud;
+        await _saveAccounts();
+        if (!imported) await prefs.setBool(importedKey, true);
       }
-      _accounts = loaded;
+      if (sessionIsCurrent()) _syncError = null;
+    } on FinanceSyncException catch (e) {
+      if (sessionIsCurrent()) _syncError = e.message;
     } catch (e) {
-      debugPrint('Error al sincronizar cuentas: $e');
+      if (sessionIsCurrent()) _syncError = 'No se pudieron sincronizar las cuentas.';
     } finally {
       if (sessionIsCurrent()) {
         _isLoading = false;
@@ -112,10 +136,10 @@ class AccountsProvider extends ChangeNotifier {
     bool isSavingsVault = false,
     double? targetAmount,
     String colorHex = '#3366D6',
+    String? accountId,
   }) async {
-    final token = _authToken;
     final newAccount = Account(
-      id: 'acc_${DateTime.now().millisecondsSinceEpoch}',
+      id: accountId ?? FinanceApiService.newId('acc'),
       name: name.trim(),
       type: type,
       currency: currency,
@@ -126,89 +150,38 @@ class AccountsProvider extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
 
-    _accounts.add(newAccount);
-    await _saveAccounts();
-    if (token != null && token.isNotEmpty) {
-      await FinanceApiService.saveAccount(token, newAccount);
-    }
-    notifyListeners();
+    await _saveInCloud(newAccount, createOnly: true);
   }
 
   /// Editar cuenta o bóveda
-  Future<void> updateAccount(Account updated) async {
-    final token = _authToken;
-    final index = _accounts.indexWhere((a) => a.id == updated.id);
-    if (index != -1) {
-      _accounts[index] = updated;
-      await _saveAccounts();
-      if (token != null && token.isNotEmpty) {
-        FinanceApiService.saveAccount(token, updated);
-      }
-      notifyListeners();
+  Future<void> updateAccount(Account updated, {required double previousBalance}) =>
+      _saveInCloud(updated, previousBalance: previousBalance);
+
+  Future<void> _saveInCloud(Account updated, {bool createOnly = false, double? previousBalance}) async {
+    final token = FinanceApiService.requireSession(_authToken);
+    final saved = await FinanceApiService.saveAccount(token, updated,
+      createOnly: createOnly, previousBalance: previousBalance);
+    if (token != _authToken) return;
+    final index = _accounts.indexWhere((a) => a.id == saved.id);
+    if (index < 0) {
+      _accounts.add(saved);
+    } else {
+      _accounts[index] = saved;
     }
+    _revision++;
+    await _saveAccounts();
+    notifyListeners();
   }
 
   /// Eliminar cuenta
   Future<void> deleteAccount(String accountId) async {
-    final token = _authToken;
+    final token = FinanceApiService.requireSession(_authToken);
+    await FinanceApiService.deleteAccount(token, accountId);
+    if (token != _authToken) return;
     _accounts.removeWhere((a) => a.id == accountId);
+    _revision++;
     await _saveAccounts();
-    if (token != null && token.isNotEmpty) {
-      FinanceApiService.deleteAccount(token, accountId);
-    }
     notifyListeners();
-  }
-
-  /// CU-1.3: Transferir entre cuentas propias / meter dinero a bóveda sin contar como gasto
-  Future<bool> transferFunds({
-    required String originAccountId,
-    required String destinationAccountId,
-    required double amount,
-  }) async {
-    final token = _authToken;
-    if (amount <= 0) return false;
-
-    final originIdx = _accounts.indexWhere((a) => a.id == originAccountId);
-    final destIdx = _accounts.indexWhere((a) => a.id == destinationAccountId);
-
-    if (originIdx == -1 || destIdx == -1) return false;
-    if (_accounts[originIdx].balance < amount) return false; // Saldo insuficiente
-
-    final origin = _accounts[originIdx];
-    final destination = _accounts[destIdx];
-
-    final updatedOrigin = origin.copyWith(balance: origin.balance - amount);
-    final updatedDestination = destination.copyWith(balance: destination.balance + amount);
-    _accounts[originIdx] = updatedOrigin;
-    _accounts[destIdx] = updatedDestination;
-
-    await _saveAccounts();
-    if (token != null && token.isNotEmpty) {
-      FinanceApiService.saveAccount(token, updatedOrigin);
-      FinanceApiService.saveAccount(token, updatedDestination);
-    }
-    notifyListeners();
-    return true;
-  }
-
-  /// Ajustar saldo (para ingresos de transferencias, ventas o gastos)
-  Future<void> adjustBalance(
-    String accountId,
-    double delta, {
-    bool syncToCloud = true,
-  }) async {
-    final token = _authToken;
-    final index = _accounts.indexWhere((a) => a.id == accountId);
-    if (index != -1) {
-      final current = _accounts[index];
-      final updated = current.copyWith(balance: current.balance + delta);
-      _accounts[index] = updated;
-      await _saveAccounts();
-      if (syncToCloud && token != null && token.isNotEmpty) {
-        FinanceApiService.saveAccount(token, updated);
-      }
-      notifyListeners();
-    }
   }
 
   /// Formateador monetario amigable (ej. "Bs 3.200,00")

@@ -12,6 +12,10 @@ class TransactionsProvider extends ChangeNotifier {
   String? _authToken;
   List<TransactionModel> _transactions = [];
   bool _isLoading = false;
+  Future<void>? _sessionLoad;
+  AccountsProvider? _accountsProvider;
+  int _revision = 0;
+  String? _syncError;
 
   String get _storageKey =>
       'kpital_transactions_${_currentUserId.isNotEmpty ? _currentUserId : "guest"}_v2';
@@ -24,6 +28,7 @@ class TransactionsProvider extends ChangeNotifier {
 
   List<TransactionModel> get allTransactions => List.unmodifiable(_transactions);
   bool get isLoading => _isLoading;
+  String? get syncError => _syncError;
 
   String get searchQuery => _searchQuery;
   DateFilterPeriod get selectedPeriod => _selectedPeriod;
@@ -147,24 +152,34 @@ class TransactionsProvider extends ChangeNotifier {
 
   TransactionsProvider();
 
-  Future<void> setUserId(String userId) async {
-    await setAuthSession(userId: userId, token: _authToken);
-  }
-
-  Future<void> setAuthSession({required String userId, String? token}) async {
+  Future<void> setAuthSession({required String userId, String? token,
+    required AccountsProvider accountsProvider}) async {
     final userChanged = _currentUserId != userId;
     final tokenChanged = _authToken != token;
     if (!userChanged && !tokenChanged) return;
     if (userChanged) _transactions = [];
+    _syncError = null;
     _currentUserId = userId;
     _authToken = token;
-    await _loadTransactions();
+    _accountsProvider = accountsProvider;
+    final load = Future<void>.microtask(_loadTransactions);
+    _sessionLoad = load;
+    await load;
+  }
+
+  Future<void> synchronize() async {
+    await _sessionLoad;
+    if (_isLoading || _authToken == null) return;
+    final load = _loadTransactions();
+    _sessionLoad = load;
+    await load;
   }
 
   Future<void> _loadTransactions() async {
     final userId = _currentUserId;
     final token = _authToken;
     final storageKey = _storageKey;
+    final revision = _revision;
     bool sessionIsCurrent() => _currentUserId == userId && _authToken == token;
     _isLoading = true;
     notifyListeners();
@@ -179,19 +194,24 @@ class TransactionsProvider extends ChangeNotifier {
         final decoded = jsonDecode(stored) as List<dynamic>;
         loaded = decoded.map((item) => TransactionModel.fromJson(item as Map<String, dynamic>)).toList();
       }
-      if (token != null && token.isNotEmpty) {
-        final cloud = await FinanceApiService.syncTransactions(token, loaded);
-        if (!sessionIsCurrent()) return;
-        if (cloud != null) {
-          loaded = cloud;
-          await prefs.setString(storageKey, jsonEncode(loaded.map((item) => item.toJson()).toList()));
-          if (!sessionIsCurrent()) return;
-        }
-      }
       loaded.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
-      _transactions = loaded;
+      if (_revision == revision) _transactions = loaded;
+      if (token != null && token.isNotEmpty) {
+        await _accountsProvider?.waitForCloud();
+        if (!sessionIsCurrent() || _revision != revision) return;
+        final importedKey = '${storageKey}_imported';
+        final imported = prefs.getBool(importedKey) ?? false;
+        final cloud = await FinanceApiService.syncTransactions(token, imported ? [] : loaded);
+        if (!sessionIsCurrent() || _revision != revision) return;
+        _transactions = cloud;
+        await _saveTransactions();
+        if (!imported) await prefs.setBool(importedKey, true);
+      }
+      if (sessionIsCurrent()) _syncError = null;
+    } on FinanceSyncException catch (e) {
+      if (sessionIsCurrent()) _syncError = e.message;
     } catch (e) {
-      debugPrint('Error al sincronizar movimientos: $e');
+      if (sessionIsCurrent()) _syncError = 'No se pudieron sincronizar los movimientos.';
     } finally {
       if (sessionIsCurrent()) {
         _isLoading = false;
@@ -222,13 +242,12 @@ class TransactionsProvider extends ChangeNotifier {
     String? description,
     String? receiptImagePath,
     DateTime? transactionDate,
+    String? transactionId,
     String category = 'Transferencia Recibida',
   }) async {
-    final token = _authToken;
-    final userId = _currentUserId;
     final now = DateTime.now();
     final newTx = TransactionModel(
-      id: 'tx_${now.millisecondsSinceEpoch}',
+      id: transactionId ?? FinanceApiService.newId('tx'),
       accountId: accountId,
       accountName: accountName,
       type: TransactionType.income,
@@ -242,20 +261,7 @@ class TransactionsProvider extends ChangeNotifier {
       createdAt: now,
     );
 
-    _transactions.insert(0, newTx);
-    await _saveTransactions();
-
-    if (_currentUserId != userId || _authToken != token) return newTx;
-
-    // Actualiza automáticamente el saldo en la cuenta elegida (CU-1.1)
-    await accountsProvider.adjustBalance(accountId, amount, syncToCloud: false);
-
-    if (token != null && token.isNotEmpty) {
-      await FinanceApiService.saveTransaction(token, newTx);
-    }
-
-    notifyListeners();
-    return newTx;
+    return _record(newTx, accountsProvider);
   }
 
   /// CU-2.1: Registrar Gasto
@@ -270,12 +276,11 @@ class TransactionsProvider extends ChangeNotifier {
     bool isEssential = true,
     String? receiptImagePath,
     DateTime? transactionDate,
+    String? transactionId,
   }) async {
-    final token = _authToken;
-    final userId = _currentUserId;
     final now = DateTime.now();
     final newTx = TransactionModel(
-      id: 'tx_${now.millisecondsSinceEpoch}',
+      id: transactionId ?? FinanceApiService.newId('tx'),
       accountId: accountId,
       accountName: accountName,
       type: TransactionType.expense,
@@ -290,48 +295,70 @@ class TransactionsProvider extends ChangeNotifier {
       createdAt: now,
     );
 
-    _transactions.insert(0, newTx);
-    await _saveTransactions();
-
-    if (_currentUserId != userId || _authToken != token) return newTx;
-
-    // Descuenta el dinero de la cuenta de salida
-    await accountsProvider.adjustBalance(accountId, -amount, syncToCloud: false);
-
-    if (token != null && token.isNotEmpty) {
-      await FinanceApiService.saveTransaction(token, newTx);
-    }
-
-    notifyListeners();
-    return newTx;
+    return _record(newTx, accountsProvider);
   }
 
-  /// Eliminar transacción con reversión de saldo
+  Future<TransactionModel> recordTransfer({
+    required AccountsProvider accountsProvider,
+    required String originAccountId,
+    required String destinationAccountId,
+    required double amount,
+    required String transactionId,
+  }) async {
+    final origin = accountsProvider.accounts.where((a) => a.id == originAccountId).firstOrNull;
+    final destination = accountsProvider.accounts.where((a) => a.id == destinationAccountId).firstOrNull;
+    if (origin == null || destination == null) {
+      throw const FinanceSyncException('Una de las cuentas de la transferencia ya no está disponible.');
+    }
+    final now = DateTime.now();
+    return _record(
+      TransactionModel(
+        id: transactionId,
+        accountId: origin.id,
+        accountName: origin.name,
+        destinationAccountId: destination.id,
+        destinationAccountName: destination.name,
+        type: TransactionType.transfer,
+        amount: amount,
+        currency: origin.currency,
+        transactionDate: now,
+        createdAt: now,
+      ),
+      accountsProvider,
+    );
+  }
+
+  Future<TransactionModel> _record(TransactionModel tx, AccountsProvider accounts) async {
+    final token = FinanceApiService.requireSession(_authToken);
+    await accounts.waitForCloud();
+    if (token != _authToken) {
+      throw const FinanceSyncException('La sesión cambió. Vuelve a abrir el formulario.');
+    }
+    final saved = await FinanceApiService.saveTransaction(token, tx);
+    if (token == _authToken) {
+      _revision++;
+      _transactions.removeWhere((t) => t.id == saved.id);
+      _transactions.add(saved);
+      _transactions.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
+      await _saveTransactions();
+      notifyListeners();
+      await accounts.synchronize();
+    }
+    return saved;
+  }
+
   Future<void> deleteTransaction({
     required String transactionId,
     required AccountsProvider accountsProvider,
   }) async {
-    final token = _authToken;
-    final index = _transactions.indexWhere((t) => t.id == transactionId);
-    if (index == -1) return;
-
-    final tx = _transactions.removeAt(index);
-    final saving = _saveTransactions();
-
-    // Revertir efecto en la cuenta
-    if (tx.type == TransactionType.income) {
-      await accountsProvider.adjustBalance(tx.accountId, -tx.amount, syncToCloud: false);
-    } else if (tx.type == TransactionType.expense) {
-      await accountsProvider.adjustBalance(tx.accountId, tx.amount, syncToCloud: false);
-    }
-
-    await saving;
-
-    if (token != null && token.isNotEmpty) {
-      await FinanceApiService.deleteTransaction(token, transactionId);
-    }
-
+    final token = FinanceApiService.requireSession(_authToken);
+    await FinanceApiService.deleteTransaction(token, transactionId);
+    if (token != _authToken) return;
+    _revision++;
+    _transactions.removeWhere((t) => t.id == transactionId);
+    await _saveTransactions();
     notifyListeners();
+    await accountsProvider.synchronize();
   }
 
   // Métodos de filtro (CU-1.4)

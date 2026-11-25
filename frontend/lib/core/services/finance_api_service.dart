@@ -1,142 +1,157 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../../features/accounts/models/account.dart';
 import '../../features/transactions/models/transaction.dart';
 
+class FinanceSyncException implements Exception {
+  const FinanceSyncException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class FinanceRecordChange {
+  const FinanceRecordChange(this.collection, this.id, this.data, {this.previous});
+
+  final String collection;
+  final String id;
+  final Map<String, dynamic>? data;
+  final Map<String, dynamic>? previous;
+
+  Map<String, Object?> toJson() => {
+    'collection': collection, 'id': id, 'data': data, 'previous': previous,
+  };
+}
+
 class FinanceApiService {
+  static final _random = Random.secure();
+
+  static String newId(String prefix) {
+    final suffix = List.generate(16, (_) => _random.nextInt(256)
+        .toRadixString(16).padLeft(2, '0')).join();
+    return '${prefix}_${DateTime.now().microsecondsSinceEpoch}_$suffix';
+  }
+
   static const String _backendUrl = String.fromEnvironment(
     'BACKEND_URL',
     defaultValue: 'https://kpital-api.onrender.com',
   );
 
-  static const Duration _timeout = Duration(seconds: 25);
+  static const Duration _timeout = Duration(seconds: 65);
 
   static Map<String, String> _headers(String token) => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       };
 
-  // =========================================================================
-  // CUENTAS
-  // =========================================================================
-
-  static Future<List<Account>?> fetchAccounts(String token) async {
+  static Future<http.Response> _request(String token, String path,
+      {String method = 'GET', Object? body}) async {
     try {
-      final url = Uri.parse('$_backendUrl/api/accounts');
-      final res = await http.get(url, headers: _headers(token)).timeout(_timeout);
-      if (res.statusCode == 200) {
-        final List<dynamic> list = jsonDecode(res.body);
-        return list.map((item) => Account.fromJson(item as Map<String, dynamic>)).toList();
+      final request = http.Request(method, Uri.parse('$_backendUrl/api/$path'));
+      request.headers.addAll(_headers(token));
+      if (body != null) request.body = jsonEncode(body);
+      final response = await request.send()
+          .then(http.Response.fromStream).timeout(_timeout);
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return response;
       }
-    } catch (e) {
-      debugPrint('[FinanceApiService] Error fetching accounts: $e');
-    }
-    return null;
-  }
-
-  static Future<Account?> saveAccount(String token, Account account) async {
-    try {
-      final url = Uri.parse('$_backendUrl/api/accounts');
-      final res = await http
-          .post(url, headers: _headers(token), body: jsonEncode(account.toJson()))
-          .timeout(_timeout);
-      if (res.statusCode == 200) {
-        return Account.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+      debugPrint('[Finanzas] $method $path: HTTP ${response.statusCode}');
+      if (response.statusCode == 401) {
+        throw const FinanceSyncException('Vuelve a iniciar sesión para sincronizar.');
       }
-    } catch (e) {
-      debugPrint('[FinanceApiService] Error saving account: $e');
-    }
-    return null;
-  }
-
-  static Future<bool> deleteAccount(String token, String accountId) async {
-    try {
-      final url = Uri.parse('$_backendUrl/api/accounts/$accountId');
-      final res = await http.delete(url, headers: _headers(token)).timeout(_timeout);
-      return res.statusCode == 200 || res.statusCode == 204;
-    } catch (e) {
-      debugPrint('[FinanceApiService] Error deleting account: $e');
-      return false;
-    }
-  }
-
-  static Future<List<Account>?> syncAccounts(String token, List<Account> localAccounts) async {
-    try {
-      final url = Uri.parse('$_backendUrl/api/accounts/sync');
-      final body = jsonEncode({
-        'accounts': localAccounts.map((a) => a.toJson()).toList(),
-      });
-      final res = await http.post(url, headers: _headers(token), body: body).timeout(_timeout);
-      if (res.statusCode == 200) {
-        final List<dynamic> list = jsonDecode(res.body);
-        return list.map((item) => Account.fromJson(item as Map<String, dynamic>)).toList();
+      if (response.statusCode == 409 || response.statusCode == 422) {
+        final body = jsonDecode(response.body);
+        final detail = body is Map ? body['detail'] : null;
+        throw FinanceSyncException(detail is String
+            ? detail
+            : 'Revisa los datos ingresados antes de guardar.');
       }
-    } catch (e) {
-      debugPrint('[FinanceApiService] Error syncing accounts: $e');
+    } on FinanceSyncException {
+      rethrow;
+    } catch (error) {
+      debugPrint('[Finanzas] $method $path: ${error.runtimeType}');
     }
-    return null;
+    throw const FinanceSyncException('No se pudo confirmar el guardado en la nube. Inténtalo de nuevo.');
   }
 
-  // =========================================================================
-  // TRANSACCIONES
-  // =========================================================================
-
-  static Future<List<TransactionModel>?> fetchTransactions(String token) async {
-    try {
-      final url = Uri.parse('$_backendUrl/api/transactions');
-      final res = await http.get(url, headers: _headers(token)).timeout(_timeout);
-      if (res.statusCode == 200) {
-        final List<dynamic> list = jsonDecode(res.body);
-        return list.map((item) => TransactionModel.fromJson(item as Map<String, dynamic>)).toList();
-      }
-    } catch (e) {
-      debugPrint('[FinanceApiService] Error fetching transactions: $e');
-    }
-    return null;
+  static Future<List<Map<String, dynamic>>> syncRecords(
+    String token,
+    String collection,
+    Iterable<Map<String, dynamic>> local,
+  ) async {
+    final response = await _request(token, 'finance/records/$collection/sync',
+        method: 'POST', body: {
+          'legacy': local.map((data) => {'id': data['id'], 'data': data}).toList(),
+        });
+    return (jsonDecode(response.body) as List).cast<Map<String, dynamic>>();
   }
 
-  static Future<TransactionModel?> saveTransaction(String token, TransactionModel tx) async {
-    try {
-      final url = Uri.parse('$_backendUrl/api/transactions');
-      final res = await http
-          .post(url, headers: _headers(token), body: jsonEncode(tx.toJson()))
-          .timeout(_timeout);
-      if (res.statusCode == 200) {
-        return TransactionModel.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
-      }
-    } catch (e) {
-      debugPrint('[FinanceApiService] Error saving transaction: $e');
-    }
-    return null;
+  static Future<void> saveRecords(String token, List<FinanceRecordChange> changes,
+      {TransactionModel? transaction}) async {
+    await _request(token, 'finance/records', method: 'POST', body: {
+      'changes': changes.map((change) => change.toJson()).toList(),
+      if (transaction != null) 'transaction': transaction.toJson(),
+    });
   }
 
-  static Future<bool> deleteTransaction(String token, String transactionId) async {
-    try {
-      final url = Uri.parse('$_backendUrl/api/transactions/$transactionId');
-      final res = await http.delete(url, headers: _headers(token)).timeout(_timeout);
-      return res.statusCode == 200 || res.statusCode == 204;
-    } catch (e) {
-      debugPrint('[FinanceApiService] Error deleting transaction: $e');
-      return false;
-    }
+  static Future<List<Account>> syncAccounts(
+    String token, List<Account> localAccounts,
+  ) async {
+    final response = localAccounts.isEmpty
+        ? await _request(token, 'accounts')
+        : await _request(token, 'accounts/sync', method: 'POST',
+            body: {'accounts': localAccounts.map((a) => a.toJson()).toList()});
+    return (jsonDecode(response.body) as List).cast<Map<String, dynamic>>()
+        .map(Account.fromJson).toList();
   }
 
-  static Future<List<TransactionModel>?> syncTransactions(
-      String token, List<TransactionModel> localTxs) async {
-    try {
-      final url = Uri.parse('$_backendUrl/api/transactions/sync');
-      final body = jsonEncode({
-        'transactions': localTxs.map((t) => t.toJson()).toList(),
-      });
-      final res = await http.post(url, headers: _headers(token), body: body).timeout(_timeout);
-      if (res.statusCode == 200) {
-        final List<dynamic> list = jsonDecode(res.body);
-        return list.map((item) => TransactionModel.fromJson(item as Map<String, dynamic>)).toList();
-      }
-    } catch (e) {
-      debugPrint('[FinanceApiService] Error syncing transactions: $e');
+  static Future<Account> saveAccount(String token, Account account,
+      {bool createOnly = false, double? previousBalance}) async {
+    final options = Uri(queryParameters: {
+      if (createOnly) 'create_only': 'true',
+      if (previousBalance == account.balance) 'preserve_balance': 'true',
+      if (previousBalance != null && previousBalance != account.balance)
+        'previous_balance': previousBalance.toString(),
+    }).query;
+    final path = options.isEmpty ? 'accounts' : 'accounts?$options';
+    final response = await _request(token, path, method: 'POST',
+        body: account.toJson());
+    return Account.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  static Future<void> deleteAccount(String token, String id) async {
+    await _request(token, 'accounts/${Uri.encodeComponent(id)}', method: 'DELETE');
+  }
+
+  static Future<List<TransactionModel>> syncTransactions(
+    String token, List<TransactionModel> localTransactions,
+  ) async {
+    final response = localTransactions.isEmpty
+        ? await _request(token, 'transactions')
+        : await _request(token, 'transactions/sync', method: 'POST',
+            body: {'transactions': localTransactions.map((t) => t.toJson()).toList()});
+    return (jsonDecode(response.body) as List).cast<Map<String, dynamic>>()
+        .map(TransactionModel.fromJson).toList();
+  }
+
+  static Future<TransactionModel> saveTransaction(String token, TransactionModel tx) async {
+    final response = await _request(token, 'transactions', method: 'POST',
+        body: tx.toJson());
+    return TransactionModel.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+  }
+
+  static Future<void> deleteTransaction(String token, String id) async {
+    await _request(token, 'transactions/${Uri.encodeComponent(id)}', method: 'DELETE');
+  }
+
+  static String requireSession(String? token) {
+    if (token == null || token.isEmpty) {
+      throw const FinanceSyncException('Inicia sesión para guardar en la nube.');
     }
-    return null;
+    return token;
   }
 }

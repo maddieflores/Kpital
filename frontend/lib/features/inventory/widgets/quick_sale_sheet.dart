@@ -1,3 +1,4 @@
+import '../../../core/services/finance_api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_design_tokens.dart';
@@ -35,6 +36,7 @@ class _QuickSaleSheetState extends State<QuickSaleSheet> {
   SaleScale _selectedScale = SaleScale.dozen;
   String _paymentMethod = 'QR';
   String? _selectedAccountId;
+  final _draftId = FinanceApiService.newId('sale');
   bool _isSaving = false;
 
   @override
@@ -73,18 +75,29 @@ class _QuickSaleSheetState extends State<QuickSaleSheet> {
 
     final account = accountsProv.accounts.firstWhere((a) => a.id == _selectedAccountId);
 
-    final success = await inventoryProv.recordQuickSale(
-      productId: _selectedProductId!,
-      scale: _selectedScale,
-      scaleQuantity: qty,
-      accountId: account.id,
-      accountName: account.name,
-      paymentMethod: _paymentMethod,
-      accountsProvider: accountsProv,
-      transactionsProvider: txProv,
-    );
-
-    setState(() => _isSaving = false);
+    late final bool success;
+    try {
+      success = await inventoryProv.recordQuickSale(
+        saleId: _draftId,
+        productId: _selectedProductId!,
+        scale: _selectedScale,
+        scaleQuantity: qty,
+        accountId: account.id,
+        accountName: account.name,
+        paymentMethod: _paymentMethod,
+        accountsProvider: accountsProv,
+        transactionsProvider: txProv,
+      );
+    } on FinanceSyncException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message)),
+        );
+      }
+      return;
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
 
     if (mounted) {
       if (success) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/services/finance_api_service.dart';
 import '../../../core/theme/app_design_tokens.dart';
 import '../../accounts/providers/accounts_provider.dart';
 import '../models/product.dart';
@@ -23,9 +24,15 @@ class InventoryScreen extends StatelessWidget {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () {
-              Provider.of<InventoryProvider>(context, listen: false).deleteProduct(product.id);
+            onPressed: () async {
+              final provider = context.read<InventoryProvider>();
+              final messenger = ScaffoldMessenger.of(context);
               Navigator.of(ctx).pop();
+              try {
+                await provider.deleteProduct(product.id);
+              } on FinanceSyncException catch (error) {
+                messenger.showSnackBar(SnackBar(content: Text(error.message)));
+              }
             },
             child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
           ),
