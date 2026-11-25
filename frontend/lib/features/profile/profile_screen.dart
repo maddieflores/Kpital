@@ -1,15 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/biometric_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/theme/app_design_tokens.dart';
 import '../../core/theme/theme_provider.dart';
+import '../accounts/screens/accounts_manager_screen.dart';
 import '../ads/providers/ads_provider.dart';
 import '../appearance/screens/appearance_screen.dart';
 import '../auth/providers/auth_provider.dart';
 import '../auth/login_screen.dart';
+import '../inventory/screens/inventory_screen.dart';
+import '../transactions/screens/expenses_analytics_screen.dart';
+import '../transactions/screens/transactions_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometrics();
+  }
+
+  Future<void> _checkBiometrics() async {
+    if (BiometricAuthService.isPlatformSupported) {
+      final available = await BiometricAuthService.isBiometricAvailable();
+      final enabled = await BiometricAuthService.isBiometricEnabled();
+      if (mounted) {
+        setState(() {
+          _biometricAvailable = available;
+          _biometricEnabled = enabled;
+        });
+      }
+    }
+  }
 
   Future<void> _showSecurityModal(BuildContext context, AuthProvider auth) async {
     final current = TextEditingController();
@@ -75,6 +107,44 @@ class ProfileScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _confirmLogout(BuildContext context, AuthProvider authProv) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.logout, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('¿Cerrar sesión?'),
+          ],
+        ),
+        content: const Text('¿Estás seguro/a de que deseas cerrar tu sesión en Kpital? Tendrás que ingresar tus credenciales nuevamente.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cerrar sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true && context.mounted) {
+      await authProv.logout();
+      if (!context.mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
@@ -87,6 +157,14 @@ class ProfileScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Perfil y Ajustes"),
+        actions: [
+          if (authProv.isLoggedIn)
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.redAccent),
+              tooltip: "Cerrar sesión",
+              onPressed: () => _confirmLogout(context, authProv),
+            ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -191,9 +269,9 @@ class ProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // SECCIÓN 1: PERSONALIZACIÓN VISUAL (Destacada)
+          // SECCIÓN NUEVA: HERRAMIENTAS Y MÓDULOS DE KPITAL (Los accesos del encabezado)
           Text(
-            "ESTILO Y PERSONALIZACIÓN",
+            "HERRAMIENTAS Y MÓDULOS",
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -213,7 +291,95 @@ class ProfileScreen extends StatelessWidget {
             child: Column(
               children: [
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3366D6).withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.account_balance_rounded, color: Color(0xFF3366D6)),
+                  ),
+                  title: const Text("Gestor de Cuentas & Bóvedas", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: Text("Efectivo, bancos y bóvedas protegidas", style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const AccountsManagerScreen()),
+                    );
+                  },
+                ),
+                Divider(height: 1, indent: 64, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.receipt_long_rounded, color: Color(0xFF10B981)),
+                  ),
+                  title: const Text("Movimientos & QR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: Text("Historial de ingresos, gastos y transferencias", style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const TransactionsScreen()),
+                    );
+                  },
+                ),
+                Divider(height: 1, indent: 64, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.pie_chart_outline_rounded, color: Color(0xFFF59E0B)),
+                  ),
+                  title: const Text("Gráfico de Gastos (Analítica)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: Text("Desglose mensual de gastos fijos y hormiga", style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ExpensesAnalyticsScreen()),
+                    );
+                  },
+                ),
+                Divider(height: 1, indent: 64, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8B5CF6).withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.inventory_2_outlined, color: Color(0xFF8B5CF6)),
+                  ),
+                  title: const Text("Inventario & Escalas (Micro-negocio)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: Text("Lotes mayoristas, escandallo, docenas y stock", style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InventoryScreen()),
+                    );
+                  },
+                ),
+                Divider(height: 1, indent: 64, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   leading: Container(
                     width: 40,
                     height: 40,
@@ -223,11 +389,8 @@ class ProfileScreen extends StatelessWidget {
                     ),
                     child: Icon(Icons.palette_outlined, color: currentIdentity.primary),
                   ),
-                  title: const Text("Identidad visual & Fondos", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  subtitle: Text(
-                    "${currentIdentity.name} • ${themeProvider.bgType == 'default' ? 'Fondo original' : 'Fondo personalizado'}",
-                    style: TextStyle(color: tokens.textSecondary, fontSize: 12),
-                  ),
+                  title: const Text("Estilos & Apariencia", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: Text("${currentIdentity.name} • Colores y fondos", style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 14),
                   onTap: () {
                     Navigator.push(
@@ -238,38 +401,14 @@ class ProfileScreen extends StatelessWidget {
                     );
                   },
                 ),
-                Divider(height: 1, indent: 64, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: currentIdentity.primary.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(Icons.view_carousel_outlined, color: currentIdentity.primary),
-                  ),
-                  title: const Text("Explorar propuestas de Figma", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                  subtitle: Text("Azul, Violeta, Minimalista y Oscuro", style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AppearanceScreen(initialTabIndex: 0),
-                      ),
-                    );
-                  },
-                ),
               ],
             ),
           ),
           const SizedBox(height: 24),
 
-          // SECCIÓN 2: PREFERENCIAS FINANCIERAS
+          // SECCIÓN 2: SEGURIDAD Y PREFERENCIAS
           Text(
-            "PREFERENCIAS FINANCIERAS",
+            "SEGURIDAD Y PREFERENCIAS",
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -294,30 +433,48 @@ class ProfileScreen extends StatelessWidget {
                   trailing: const Text("Bolivianos (Bs)", style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
                 Divider(height: 1, indent: 56, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
-                  if (authProv.isLoggedIn)
-                    ListTile(
-                      leading: const Icon(Icons.security_outlined),
-                      title: const Text('Cambiar contraseña'),
-                      onTap: () => _showSecurityModal(context, authProv),
-                    ),
+                if (authProv.isLoggedIn)
                   ListTile(
-                    leading: Icon(authProv.isLoggedIn ? Icons.logout : Icons.login),
-                    title: Text(authProv.isLoggedIn ? 'Cerrar sesión' : 'Iniciar sesión'),
-                    onTap: () async {
-                      if (authProv.isLoggedIn) await authProv.logout();
-                      if (!context.mounted) return;
-                      Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
-                        (route) => false,
-                      );
+                    leading: const Icon(Icons.security_outlined),
+                    title: const Text('Cambiar contraseña'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                    onTap: () => _showSecurityModal(context, authProv),
+                  ),
+                // Opción de Huella Digital (Solo visible en dispositivos móviles con hardware)
+                if (BiometricAuthService.isPlatformSupported && _biometricAvailable) ...[
+                  Divider(height: 1, indent: 56, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.fingerprint, color: Color(0xFF8261B8)),
+                    title: const Text("Ingreso con huella dactilar", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    subtitle: const Text("Acceso rápido con la huella de tu teléfono", style: TextStyle(fontSize: 12)),
+                    value: _biometricEnabled,
+                    activeColor: const Color(0xFF8261B8),
+                    onChanged: (val) async {
+                      if (val) {
+                        final auth = await BiometricAuthService.authenticate(
+                          reason: 'Confirma tu huella para activar el acceso rápido',
+                        );
+                        if (!auth) return;
+                      }
+                      await BiometricAuthService.setBiometricEnabled(val);
+                      setState(() => _biometricEnabled = val);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: val ? const Color(0xFF10B981) : Colors.blueGrey,
+                            content: Text(val ? "¡Acceso con huella digital activado!" : "Acceso con huella desactivado."),
+                          ),
+                        );
+                      }
                     },
                   ),
+                ],
               ],
             ),
           ),
           const SizedBox(height: 24),
 
-          // SECCIÓN 2.5: NOTIFICACIONES Y ALERTAS (INCISOS A Y B)
+          // SECCIÓN 3: NOTIFICACIONES Y ALERTAS (INCISOS A Y B)
           Text(
             "NOTIFICACIONES & ALERTAS",
             style: TextStyle(
@@ -348,12 +505,14 @@ class ProfileScreen extends StatelessWidget {
                     label: const Text("Probar", style: TextStyle(fontWeight: FontWeight.bold)),
                     onPressed: () async {
                       await NotificationService().showDailyFinanceReminder(userName: user.fullName);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          backgroundColor: Color(0xFF8261B8),
-                          content: Text("¡Notificación local enviada a tu barra de estado!"),
-                        ),
-                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            backgroundColor: Color(0xFF8261B8),
+                            content: Text("¡Notificación local enviada a tu barra de estado!"),
+                          ),
+                        );
+                      }
                     },
                   ),
                 ),
@@ -368,12 +527,14 @@ class ProfileScreen extends StatelessWidget {
                     label: const Text("Probar", style: TextStyle(fontWeight: FontWeight.bold)),
                     onPressed: () async {
                       await NotificationService().showDebtDueReminder(personName: "Cliente Ejemplo", amount: 350.0);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          backgroundColor: Colors.amber,
-                          content: Text("¡Alerta de cobranza enviada a la barra de estado!"),
-                        ),
-                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            backgroundColor: Colors.amber,
+                            content: Text("¡Alerta de cobranza enviada a la barra de estado!"),
+                          ),
+                        );
+                      }
                     },
                   ),
                 ),
@@ -408,7 +569,7 @@ class ProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
 
-          // SECCIÓN 3: MODO CREADOR Y PUBLICIDAD (CU-7.3)
+          // SECCIÓN 4: MODO CREADOR Y PUBLICIDAD (CU-7.3)
           Text(
             "MONETIZACIÓN Y MODO CREADOR",
             style: TextStyle(
@@ -495,7 +656,36 @@ class ProfileScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 30),
+          const SizedBox(height: 28),
+
+          // BOTÓN PRINCIPAL DE CERRAR SESIÓN (Muy visible y destacado)
+          if (authProv.isLoggedIn)
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: () => _confirmLogout(context, authProv),
+                icon: const Icon(Icons.logout_rounded, color: Colors.white, size: 20),
+                label: const Text(
+                  "Cerrar sesión",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFDC2626),
+                  foregroundColor: Colors.white,
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 24),
 
           // Footer de la app
           Center(
@@ -517,12 +707,13 @@ class ProfileScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "Versión 1.0.0 · Cuenta Owner de Madeline Flores",
+                  "Versión 1.0.0",
                   style: TextStyle(color: tokens.textSecondary.withOpacity(0.6), fontSize: 11),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 12),
         ],
       ),
     );

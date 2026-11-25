@@ -99,6 +99,8 @@ class AuthProvider extends ChangeNotifier {
 
   static const _tokenKey = 'kpital_session_token_v2';
   static const _userKey = 'kpital_session_user_v2';
+  static const _keyRememberSession = 'kpital_remember_session_v2';
+  static const _keySavedIdentifier = 'kpital_saved_identifier_v2';
 
   UserModel _currentUser = _guest;
   String? _token;
@@ -120,6 +122,10 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _restoreSession() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final remember = prefs.getBool(_keyRememberSession) ?? true;
+      if (!remember) {
+        return;
+      }
       final savedToken = prefs.getString(_tokenKey);
       final savedUserJson = prefs.getString(_userKey);
       if (savedToken != null &&
@@ -152,8 +158,16 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> login({required String identifier, required String password}) =>
-      _startSession('login', {'identifier': identifier, 'password': password});
+  Future<bool> login({
+    required String identifier,
+    required String password,
+    bool rememberMe = true,
+  }) =>
+      _startSession(
+        'login',
+        {'identifier': identifier, 'password': password},
+        rememberMe: rememberMe,
+      );
 
   Future<bool> register({
     required String fullName,
@@ -161,12 +175,24 @@ class AuthProvider extends ChangeNotifier {
     required String phoneNumber,
     required String password,
     required String currency,
-  }) => _startSession('register', {
-    'full_name': fullName, 'email': email, 'phone_number': phoneNumber,
-    'password': password, 'currency': currency,
-  });
+    bool rememberMe = true,
+  }) => _startSession(
+        'register',
+        {
+          'full_name': fullName,
+          'email': email,
+          'phone_number': phoneNumber,
+          'password': password,
+          'currency': currency,
+        },
+        rememberMe: rememberMe,
+      );
 
-  Future<bool> _startSession(String path, Map<String, String> body) async {
+  Future<bool> _startSession(
+    String path,
+    Map<String, String> body, {
+    bool rememberMe = true,
+  }) async {
     final response = await _post(path, body);
     if (response == null) return false;
     try {
@@ -178,8 +204,19 @@ class AuthProvider extends ChangeNotifier {
       _currentUser = user;
       try {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_tokenKey, token);
-        await prefs.setString(_userKey, jsonEncode(user.toJson()));
+        if (rememberMe) {
+          await prefs.setString(_tokenKey, token);
+          await prefs.setString(_userKey, jsonEncode(user.toJson()));
+          await prefs.setBool(_keyRememberSession, true);
+          final idVal = body['identifier'] ?? body['email'];
+          if (idVal != null && idVal.isNotEmpty) {
+            await prefs.setString(_keySavedIdentifier, idVal);
+          }
+        } else {
+          await prefs.remove(_tokenKey);
+          await prefs.remove(_userKey);
+          await prefs.setBool(_keyRememberSession, false);
+        }
       } catch (_) {}
       notifyListeners();
       return true;
@@ -197,6 +234,8 @@ class AuthProvider extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_tokenKey);
       await prefs.remove(_userKey);
+      await prefs.remove('kpital_bio_identifier');
+      await prefs.remove('kpital_bio_password');
     } catch (_) {}
     notifyListeners();
     if (token != null) await _post('logout', {}, token: token);

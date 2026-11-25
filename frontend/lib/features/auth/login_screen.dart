@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/biometric_service.dart';
 import '../../core/widgets/kpital_logo.dart';
 import 'providers/auth_provider.dart';
 import 'register_screen.dart';
@@ -18,6 +20,74 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _rememberMe = true;
+  bool _canUseBiometrics = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreferencesAndBiometrics();
+  }
+
+  Future<void> _loadPreferencesAndBiometrics() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedId = prefs.getString('kpital_saved_identifier_v2');
+      final remember = prefs.getBool('kpital_remember_session_v2') ?? true;
+      if (savedId != null && savedId.isNotEmpty) {
+        _emailPhoneController.text = savedId;
+      }
+      if (mounted) {
+        setState(() {
+          _rememberMe = remember;
+        });
+      }
+
+      if (BiometricAuthService.isPlatformSupported) {
+        final available = await BiometricAuthService.isBiometricAvailable();
+        final credentials = await BiometricAuthService.getSavedCredentials();
+        if (mounted) {
+          setState(() {
+            _canUseBiometrics = available && credentials != null;
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loginWithBiometrics() async {
+    final credentials = await BiometricAuthService.getSavedCredentials();
+    if (credentials == null) return;
+
+    final authenticated = await BiometricAuthService.authenticate(
+      reason: 'Usa tu huella para entrar a Kpital',
+    );
+
+    if (!authenticated || !mounted) return;
+
+    setState(() => _isLoading = true);
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final success = await authProvider.login(
+      identifier: credentials['identifier']!,
+      password: credentials['password']!,
+      rememberMe: true,
+    );
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (!success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.errorMessage ?? 'No se pudo iniciar sesión con huella.'),
+        ),
+      );
+      return;
+    }
+
+    _showWelcomeAndNavigate(authProvider, isBiometric: true);
+  }
 
   Future<void> _submitLogin() async {
     final identifier = _emailPhoneController.text.trim();
@@ -36,7 +106,11 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final success = await authProvider.login(identifier: identifier, password: password);
+    final success = await authProvider.login(
+      identifier: identifier,
+      password: password,
+      rememberMe: _rememberMe,
+    );
     if (!mounted) return;
     setState(() => _isLoading = false);
     if (!success) {
@@ -46,6 +120,20 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    // Si recordar está activo y estamos en móvil, guardar para huella
+    if (_rememberMe && BiometricAuthService.isPlatformSupported) {
+      await BiometricAuthService.saveBiometricCredentials(
+        identifier: identifier,
+        password: password,
+      );
+    } else {
+      await BiometricAuthService.clearBiometricCredentials();
+    }
+
+    _showWelcomeAndNavigate(authProvider);
+  }
+
+  void _showWelcomeAndNavigate(AuthProvider authProvider, {bool isBiometric = false}) {
     final name = authProvider.currentUser.fullName;
     final isOwner = authProvider.isOwner;
 
@@ -55,7 +143,9 @@ class _LoginScreenState extends State<LoginScreen> {
         content: Row(
           children: [
             Icon(
-              isOwner ? Icons.workspace_premium : Icons.check_circle_outline,
+              isBiometric
+                  ? Icons.fingerprint
+                  : (isOwner ? Icons.workspace_premium : Icons.check_circle_outline),
               color: isOwner ? Colors.amber : Colors.white,
             ),
             const SizedBox(width: 10),
@@ -218,9 +308,45 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
 
-              const SizedBox(height: 28),
+              // Opción de tickeo: Recordar sesión / Mantener sesión activa
+              InkWell(
+                onTap: () => setState(() => _rememberMe = !_rememberMe),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: Checkbox(
+                          value: _rememberMe,
+                          activeColor: primaryPurple,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          onChanged: (val) {
+                            setState(() => _rememberMe = val ?? true);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Mantener sesión iniciada (Recordar)',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E1A29),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 20),
 
               // Botón Iniciar sesión
               SizedBox(
@@ -252,6 +378,33 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                 ),
               ),
+
+              // Botón de huella dactilar (solo disponible en celular con credenciales recordadas)
+              if (_canUseBiometrics) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _loginWithBiometrics,
+                    icon: const Icon(Icons.fingerprint, color: primaryPurple, size: 26),
+                    label: const Text(
+                      'Ingresar con huella digital',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: primaryPurple,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: primaryPurple, width: 1.6),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 24),
 

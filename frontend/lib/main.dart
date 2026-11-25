@@ -6,7 +6,6 @@ import 'core/theme/app_theme.dart';
 import 'core/widgets/kpital_logo.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/pricing_ai/pricing_calculator_screen.dart';
-import 'features/appearance/screens/appearance_screen.dart';
 import 'features/profile/profile_screen.dart';
 import 'features/accounts/providers/accounts_provider.dart';
 import 'features/accounts/screens/accounts_manager_screen.dart';
@@ -14,7 +13,6 @@ import 'features/accounts/widgets/create_edit_account_sheet.dart';
 import 'features/accounts/widgets/transfer_funds_sheet.dart';
 import 'features/transactions/providers/transactions_provider.dart';
 import 'features/transactions/screens/transactions_screen.dart';
-import 'features/transactions/screens/expenses_analytics_screen.dart';
 import 'features/transactions/widgets/record_income_sheet.dart';
 import 'features/transactions/widgets/record_expense_sheet.dart';
 import 'features/debts/providers/debts_provider.dart';
@@ -148,13 +146,6 @@ class DashboardScreen extends StatelessWidget {
     );
   }
 
-  void _openAppearance(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AppearanceScreen()),
-    );
-  }
-
   void _openAccountsManager(BuildContext context) {
     Navigator.push(
       context,
@@ -166,13 +157,6 @@ class DashboardScreen extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const TransactionsScreen()),
-    );
-  }
-
-  void _openExpensesAnalytics(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const ExpensesAnalyticsScreen()),
     );
   }
 
@@ -252,41 +236,35 @@ class DashboardScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.inventory_2_outlined),
-                      tooltip: "Inventario & Escalas (CU-5)",
-                      color: tokens.textPrimary,
-                      onPressed: () => _openInventory(context),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.pie_chart_outline_rounded),
-                      tooltip: "Gráfico de Gastos (CU-2.3)",
-                      color: tokens.textPrimary,
-                      onPressed: () => _openExpensesAnalytics(context),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.receipt_long_rounded),
-                      tooltip: "Movimientos & QR",
-                      color: tokens.textPrimary,
-                      onPressed: () => _openTransactions(context),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.account_balance_rounded),
-                      tooltip: "Gestor de Cuentas & Bóvedas",
-                      color: tokens.textPrimary,
-                      onPressed: () => _openAccountsManager(context),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.palette_outlined),
-                      tooltip: "Estilos & Apariencia",
-                      color: tokens.textPrimary,
-                      onPressed: () => _openAppearance(context),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.settings_outlined),
-                      tooltip: "Perfil y Ajustes",
-                      color: tokens.textPrimary,
-                      onPressed: () => _openProfile(context),
+                    // Icono de Perfil único que contiene todos los accesos y ajustes
+                    InkWell(
+                      onTap: () => _openProfile(context),
+                      borderRadius: BorderRadius.circular(24),
+                      child: Tooltip(
+                        message: "Mi Perfil y Herramientas",
+                        child: Container(
+                          padding: const EdgeInsets.all(2.5),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: primaryColor.withOpacity(0.35),
+                              width: 2,
+                            ),
+                          ),
+                          child: CircleAvatar(
+                            radius: 20,
+                            backgroundColor: primaryColor.withOpacity(0.15),
+                            child: Text(
+                              user.initials,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: primaryColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
