@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
@@ -27,6 +28,13 @@ import 'features/pricing_ai/screens/seasonal_trends_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializar localización para formateo de fechas
+  try {
+    await initializeDateFormatting('es_ES', null);
+  } catch (e) {
+    debugPrint("Error inicializando locale es_ES: $e");
+  }
   
   // Inicializar Notificaciones Locales (Inciso A) y Firebase Push (Inciso B)
   try {

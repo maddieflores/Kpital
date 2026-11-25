@@ -18,7 +18,12 @@ class TransactionsScreen extends StatelessWidget {
     final accountsProv = Provider.of<AccountsProvider>(context);
 
     final transactions = txProv.filteredTransactions;
-    final dateFormat = DateFormat('dd MMM, hh:mm a', 'es_ES');
+    DateFormat dateFormat;
+    try {
+      dateFormat = DateFormat('dd MMM, hh:mm a', 'es_ES');
+    } catch (_) {
+      dateFormat = DateFormat('dd/MM/yyyy, hh:mm a');
+    }
 
     return Scaffold(
       body: Container(
