@@ -12,27 +12,66 @@ from fastapi.middleware.cors import CORSMiddleware
 from ai_service.pricing_agent import PricingAgent
 from ai_service.seasonal_trends import SeasonalTrendsService
 from .api.auth_routes import router as auth_router
+from .api.finance_routes import router as finance_router
 from pydantic import BaseModel, Field
 from typing import Optional
 
 
-def check_database(database_url: str) -> None:
+def check_and_init_database(database_url: str) -> None:
     import psycopg2
 
     try:
-        with closing(psycopg2.connect(database_url, connect_timeout=3)) as connection:
+        with closing(psycopg2.connect(database_url, connect_timeout=5)) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
-                cursor.fetchone()
-    except psycopg2.Error:
-        raise RuntimeError("No se pudo conectar con PostgreSQL.") from None
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS public.accounts (
+                        id VARCHAR(64) PRIMARY KEY,
+                        user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+                        name VARCHAR(100) NOT NULL,
+                        type VARCHAR(30) NOT NULL,
+                        currency VARCHAR(5) DEFAULT 'BOB',
+                        balance NUMERIC(14, 2) DEFAULT 0.00,
+                        is_savings_vault BOOLEAN DEFAULT FALSE,
+                        target_amount NUMERIC(14, 2),
+                        color_hex VARCHAR(10) DEFAULT '#3366D6',
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS target_amount NUMERIC(14, 2);
+                    ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS color_hex VARCHAR(10) DEFAULT '#3366D6';
+
+                    CREATE TABLE IF NOT EXISTS public.transactions (
+                        id VARCHAR(64) PRIMARY KEY,
+                        user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+                        account_id VARCHAR(64) NOT NULL,
+                        account_name VARCHAR(100),
+                        destination_account_id VARCHAR(64),
+                        destination_account_name VARCHAR(100),
+                        type VARCHAR(20) NOT NULL,
+                        amount NUMERIC(14, 2) NOT NULL,
+                        currency VARCHAR(5) DEFAULT 'BOB',
+                        contact_name VARCHAR(150),
+                        description TEXT,
+                        category VARCHAR(100),
+                        receipt_image_url TEXT,
+                        transaction_date TIMESTAMPTZ DEFAULT NOW(),
+                        created_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    CREATE INDEX IF NOT EXISTS accounts_user_id_idx ON public.accounts(user_id);
+                    CREATE INDEX IF NOT EXISTS transactions_user_id_idx ON public.transactions(user_id);
+                    CREATE INDEX IF NOT EXISTS transactions_account_id_idx ON public.transactions(account_id);
+                """)
+            connection.commit()
+    except psycopg2.Error as e:
+        print(f"Error inicializando tablas en PostgreSQL: {e}")
+        raise RuntimeError("No se pudo conectar o inicializar PostgreSQL.") from None
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        await run_in_threadpool(check_database, database_url)
+        await run_in_threadpool(check_and_init_database, database_url)
     yield
 
 
@@ -53,6 +92,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(finance_router)
 
 pricing_agent = PricingAgent()
 

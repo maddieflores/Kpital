@@ -53,11 +53,13 @@ void main() async {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProxyProvider<AuthProvider, AccountsProvider>(
           create: (_) => AccountsProvider(),
-          update: (_, auth, accounts) => (accounts ?? AccountsProvider())..setUserId(auth.currentUser.id),
+          update: (_, auth, accounts) => (accounts ?? AccountsProvider())
+            ..setAuthSession(userId: auth.currentUser.id, token: auth.token),
         ),
         ChangeNotifierProxyProvider<AuthProvider, TransactionsProvider>(
           create: (_) => TransactionsProvider(),
-          update: (_, auth, txs) => (txs ?? TransactionsProvider())..setUserId(auth.currentUser.id),
+          update: (_, auth, txs) => (txs ?? TransactionsProvider())
+            ..setAuthSession(userId: auth.currentUser.id, token: auth.token),
         ),
         ChangeNotifierProxyProvider<AuthProvider, DebtsProvider>(
           create: (_) => DebtsProvider(),

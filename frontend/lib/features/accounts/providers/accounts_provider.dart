@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import '../../../core/services/finance_api_service.dart';
 import '../models/account.dart';
 
 class AccountsProvider extends ChangeNotifier {
   String _currentUserId = '';
+  String? _authToken;
   List<Account> _accounts = [];
   bool _isLoading = false;
 
@@ -38,8 +40,15 @@ class AccountsProvider extends ChangeNotifier {
   AccountsProvider();
 
   Future<void> setUserId(String userId) async {
-    if (_currentUserId == userId && !_isLoading) return;
+    await setAuthSession(userId: userId, token: _authToken);
+  }
+
+  Future<void> setAuthSession({required String userId, String? token}) async {
+    final userChanged = _currentUserId != userId;
+    final tokenChanged = _authToken != token;
+    if (!userChanged && !tokenChanged && !_isLoading) return;
     _currentUserId = userId;
+    _authToken = token;
     await _loadAccounts();
   }
 
@@ -61,6 +70,15 @@ class AccountsProvider extends ChangeNotifier {
       } else {
         // Base limpia para usuarios nuevos: no precargar datos demo ajenos
         _accounts = [];
+      }
+
+      // Sincronizar automáticamente con la nube si hay sesión activa
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        final cloudAccounts = await FinanceApiService.syncAccounts(_authToken!, _accounts);
+        if (cloudAccounts != null) {
+          _accounts = cloudAccounts;
+          await _saveAccounts();
+        }
       }
     } catch (e) {
       debugPrint('Error al cargar cuentas: $e');
@@ -106,6 +124,9 @@ class AccountsProvider extends ChangeNotifier {
 
     _accounts.add(newAccount);
     await _saveAccounts();
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      FinanceApiService.saveAccount(_authToken!, newAccount);
+    }
     notifyListeners();
   }
 
@@ -115,6 +136,9 @@ class AccountsProvider extends ChangeNotifier {
     if (index != -1) {
       _accounts[index] = updated;
       await _saveAccounts();
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        FinanceApiService.saveAccount(_authToken!, updated);
+      }
       notifyListeners();
     }
   }
@@ -123,6 +147,9 @@ class AccountsProvider extends ChangeNotifier {
   Future<void> deleteAccount(String accountId) async {
     _accounts.removeWhere((a) => a.id == accountId);
     await _saveAccounts();
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      FinanceApiService.deleteAccount(_authToken!, accountId);
+    }
     notifyListeners();
   }
 
@@ -147,6 +174,10 @@ class AccountsProvider extends ChangeNotifier {
     _accounts[destIdx] = destination.copyWith(balance: destination.balance + amount);
 
     await _saveAccounts();
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      FinanceApiService.saveAccount(_authToken!, _accounts[originIdx]);
+      FinanceApiService.saveAccount(_authToken!, _accounts[destIdx]);
+    }
     notifyListeners();
     return true;
   }
@@ -158,6 +189,9 @@ class AccountsProvider extends ChangeNotifier {
       final current = _accounts[index];
       _accounts[index] = current.copyWith(balance: current.balance + delta);
       await _saveAccounts();
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        FinanceApiService.saveAccount(_authToken!, _accounts[index]);
+      }
       notifyListeners();
     }
   }

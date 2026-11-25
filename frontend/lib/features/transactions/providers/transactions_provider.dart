@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/services/finance_api_service.dart';
 import '../models/transaction.dart';
 import '../../accounts/providers/accounts_provider.dart';
 
@@ -8,6 +9,7 @@ enum DateFilterPeriod { all, today, thisWeek, thisMonth }
 
 class TransactionsProvider extends ChangeNotifier {
   String _currentUserId = '';
+  String? _authToken;
   List<TransactionModel> _transactions = [];
   bool _isLoading = false;
 
@@ -146,8 +148,15 @@ class TransactionsProvider extends ChangeNotifier {
   TransactionsProvider();
 
   Future<void> setUserId(String userId) async {
-    if (_currentUserId == userId && !_isLoading) return;
+    await setAuthSession(userId: userId, token: _authToken);
+  }
+
+  Future<void> setAuthSession({required String userId, String? token}) async {
+    final userChanged = _currentUserId != userId;
+    final tokenChanged = _authToken != token;
+    if (!userChanged && !tokenChanged && !_isLoading) return;
     _currentUserId = userId;
+    _authToken = token;
     await _loadTransactions();
   }
 
@@ -170,6 +179,16 @@ class TransactionsProvider extends ChangeNotifier {
       } else {
         // Base limpia para usuarios nuevos: no precargar transacciones demo
         _transactions = [];
+      }
+
+      // Sincronizar automáticamente con la nube si hay sesión activa
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        final cloudTxs = await FinanceApiService.syncTransactions(_authToken!, _transactions);
+        if (cloudTxs != null) {
+          _transactions = cloudTxs;
+          _transactions.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
+          await _saveTransactions();
+        }
       }
     } catch (e) {
       debugPrint('Error al cargar transacciones: $e');
@@ -225,6 +244,10 @@ class TransactionsProvider extends ChangeNotifier {
     // Actualiza automáticamente el saldo en la cuenta elegida (CU-1.1)
     await accountsProvider.adjustBalance(accountId, amount);
 
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      FinanceApiService.saveTransaction(_authToken!, newTx);
+    }
+
     notifyListeners();
     return newTx;
   }
@@ -265,6 +288,10 @@ class TransactionsProvider extends ChangeNotifier {
     // Descuenta el dinero de la cuenta de salida
     await accountsProvider.adjustBalance(accountId, -amount);
 
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      FinanceApiService.saveTransaction(_authToken!, newTx);
+    }
+
     notifyListeners();
     return newTx;
   }
@@ -288,6 +315,11 @@ class TransactionsProvider extends ChangeNotifier {
 
     _transactions.removeAt(index);
     await _saveTransactions();
+
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      FinanceApiService.deleteTransaction(_authToken!, transactionId);
+    }
+
     notifyListeners();
   }
 

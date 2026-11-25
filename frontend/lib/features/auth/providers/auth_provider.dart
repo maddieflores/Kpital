@@ -116,6 +116,7 @@ class AuthProvider extends ChangeNotifier {
 
   UserModel get currentUser => _currentUser;
   bool get isLoggedIn => _token != null;
+  String? get token => _token;
   bool get isOwner => isLoggedIn && _currentUser.isOwner;
 
   AuthProvider() {
