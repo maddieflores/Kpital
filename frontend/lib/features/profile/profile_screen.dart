@@ -12,6 +12,8 @@ import '../auth/login_screen.dart';
 import '../inventory/screens/inventory_screen.dart';
 import '../transactions/screens/expenses_analytics_screen.dart';
 import '../transactions/screens/transactions_screen.dart';
+import '../../core/widgets/user_avatar.dart';
+import 'screens/user_profile_details_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -43,69 +45,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  Future<void> _showSecurityModal(BuildContext context, AuthProvider auth) async {
-    final current = TextEditingController();
-    final replacement = TextEditingController();
-    try {
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) {
-          bool saving = false;
-          String? error;
-          return StatefulBuilder(builder: (dialogContext, refresh) {
-            return AlertDialog(
-              title: const Text('Cambiar contraseña'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: current,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'Contraseña actual'),
-                  ),
-                  TextField(
-                    controller: replacement,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'Nueva contraseña', helperText: 'Al menos 12 caracteres'),
-                  ),
-                  if (error != null) Text(error!),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: saving ? null : () => Navigator.pop(dialogContext),
-                  child: const Text('Cancelar'),
-                ),
-                FilledButton(
-                  onPressed: saving ? null : () async {
-                    if (current.text.isEmpty || replacement.text.length < 12) {
-                      refresh(() => error = 'Completa ambos campos.');
-                      return;
-                    }
-                    refresh(() => saving = true);
-                    final ok = await auth.updatePassword(current.text, replacement.text);
-                    if (!dialogContext.mounted) return;
-                    if (ok) {
-                      Navigator.pop(dialogContext);
-                    } else {
-                      refresh(() {
-                        saving = false;
-                        error = auth.errorMessage ?? 'Vuelve a iniciar sesión.';
-                      });
-                    }
-                  },
-                  child: const Text('Guardar'),
-                ),
-              ],
-            );
-          });
-        },
-      );
-    } finally {
-      current.dispose();
-      replacement.dispose();
-    }
-  }
 
   Future<void> _confirmLogout(BuildContext context, AuthProvider authProv) async {
     final shouldLogout = await showDialog<bool>(
@@ -169,102 +108,129 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // Tarjeta de Perfil Superior
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: tokens.cardBg,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
-              ),
-            ),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 32,
-                  backgroundColor: currentIdentity.primary.withOpacity(0.15),
-                  child: Text(
-                    user.initials,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: currentIdentity.primary,
-                    ),
+          // Tarjeta de Perfil Superior (Interactiva -> Redirige a edición de foto, datos y contraseña)
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const UserProfileDetailsScreen(),
                   ),
+                );
+              },
+              borderRadius: BorderRadius.circular(24),
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: tokens.cardBg,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: currentIdentity.primary.withOpacity(0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                child: Row(
+                  children: [
+                    UserAvatar(
+                      user: user,
+                      radius: 32,
+                      showEditBadge: true,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              user.fullName,
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: tokens.textPrimary,
-                              ),
-                            ),
-                          ),
-                          if (user.isOwner)
-                            Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Colors.amber.withOpacity(0.2),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.star, color: Colors.amber, size: 16),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        "@${user.username} • ${user.email}",
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: tokens.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: user.isOwner
-                                  ? Colors.amber.withOpacity(0.18)
-                                  : currentIdentity.primary.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (user.isOwner)
-                                  const Padding(
-                                    padding: EdgeInsets.only(right: 4),
-                                    child: Icon(Icons.verified, size: 13, color: Colors.amber),
-                                  ),
-                                Text(
-                                  user.isOwner ? "👑 Cuenta Owner · Creadora" : user.plan,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  user.fullName,
                                   style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: user.isOwner ? const Color(0xFFB45309) : currentIdentity.primary,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: tokens.textPrimary,
                                   ),
                                 ),
-                              ],
+                              ),
+                              if (user.isOwner)
+                                Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withOpacity(0.2),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.star, color: Colors.amber, size: 16),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            "@${user.username} • ${user.email}",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: tokens.textSecondary,
                             ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: user.isOwner
+                                      ? Colors.amber.withOpacity(0.18)
+                                      : currentIdentity.primary.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (user.isOwner)
+                                      const Padding(
+                                        padding: EdgeInsets.only(right: 4),
+                                        child: Icon(Icons.verified, size: 13, color: Colors.amber),
+                                      ),
+                                    Text(
+                                      user.isOwner ? "👑 Cuenta Owner · Creadora" : user.plan,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: user.isOwner ? const Color(0xFFB45309) : currentIdentity.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: currentIdentity.primary.withOpacity(0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 14,
+                        color: currentIdentity.primary,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -430,15 +396,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ListTile(
                   leading: const Icon(Icons.monetization_on_outlined),
                   title: const Text("Moneda principal"),
-                  trailing: const Text("Bolivianos (Bs)", style: TextStyle(fontWeight: FontWeight.bold)),
+                  trailing: Text(
+                    user.currency.isNotEmpty ? "${user.currency} (Bs)" : "Bolivianos (Bs)",
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
                 Divider(height: 1, indent: 56, color: tokens.isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05)),
                 if (authProv.isLoggedIn)
                   ListTile(
-                    leading: const Icon(Icons.security_outlined),
-                    title: const Text('Cambiar contraseña'),
+                    leading: const Icon(Icons.manage_accounts_outlined),
+                    title: const Text('Datos de cuenta & Contraseña'),
+                    subtitle: Text('Foto, datos personales y seguridad', style: TextStyle(color: tokens.textSecondary, fontSize: 12)),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 14),
-                    onTap: () => _showSecurityModal(context, authProv),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const UserProfileDetailsScreen(),
+                        ),
+                      );
+                    },
                   ),
                 // Opción de Huella Digital (Solo visible en dispositivos móviles con hardware)
                 if (BiometricAuthService.isPlatformSupported && _biometricAvailable) ...[

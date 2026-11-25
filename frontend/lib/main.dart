@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/kpital_logo.dart';
+import 'core/widgets/user_avatar.dart';
 import 'features/splash/splash_screen.dart';
 import 'features/pricing_ai/pricing_calculator_screen.dart';
 import 'features/profile/profile_screen.dart';
@@ -242,27 +243,9 @@ class DashboardScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(24),
                       child: Tooltip(
                         message: "Mi Perfil y Herramientas",
-                        child: Container(
-                          padding: const EdgeInsets.all(2.5),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: primaryColor.withOpacity(0.35),
-                              width: 2,
-                            ),
-                          ),
-                          child: CircleAvatar(
-                            radius: 20,
-                            backgroundColor: primaryColor.withOpacity(0.15),
-                            child: Text(
-                              user.initials,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: primaryColor,
-                              ),
-                            ),
-                          ),
+                        child: UserAvatar(
+                          user: user,
+                          radius: 20,
                         ),
                       ),
                     ),

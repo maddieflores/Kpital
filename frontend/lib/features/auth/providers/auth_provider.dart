@@ -14,6 +14,7 @@ class UserModel {
   final String plan; // 'owner', 'pro', 'free'
   final String currency;
   final String countryCode;
+  final String? avatarUrl;
 
   bool get isOwner => role == 'owner';
 
@@ -37,6 +38,7 @@ class UserModel {
     required this.plan,
     this.currency = 'BOB',
     this.countryCode = 'BO',
+    this.avatarUrl,
   });
 
   Map<String, dynamic> toJson() => {
@@ -49,6 +51,7 @@ class UserModel {
         'plan': plan,
         'currency': currency,
         'country_code': countryCode,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
       };
 
   factory UserModel.fromJson(Map<String, dynamic> json) => UserModel(
@@ -61,9 +64,11 @@ class UserModel {
         plan: json['plan'] as String? ?? 'free',
         currency: json['currency'] as String? ?? 'BOB',
         countryCode: json['country_code'] as String? ?? 'BO',
+        avatarUrl: (json['avatar_url'] ?? json['avatar']) as String?,
       );
 
   UserModel copyWith({
+    String? username,
     String? fullName,
     String? email,
     String? phoneNumber,
@@ -71,10 +76,12 @@ class UserModel {
     String? countryCode,
     String? role,
     String? plan,
+    String? avatarUrl,
+    bool clearAvatar = false,
   }) {
     return UserModel(
       id: id,
-      username: username,
+      username: username ?? this.username,
       fullName: fullName ?? this.fullName,
       email: email ?? this.email,
       phoneNumber: phoneNumber ?? this.phoneNumber,
@@ -82,6 +89,7 @@ class UserModel {
       plan: plan ?? this.plan,
       currency: currency ?? this.currency,
       countryCode: countryCode ?? this.countryCode,
+      avatarUrl: clearAvatar ? null : (avatarUrl ?? this.avatarUrl),
     );
   }
 }
@@ -247,6 +255,65 @@ class AuthProvider extends ChangeNotifier {
     return await _post('password', {
       'current_password': currentPassword, 'new_password': newPassword,
     }, token: token) != null;
+  }
+
+  Future<bool> updateProfile({
+    String? fullName,
+    String? username,
+    String? email,
+    String? phoneNumber,
+    String? currency,
+    String? avatarUrl,
+    bool clearAvatar = false,
+  }) async {
+    final updated = _currentUser.copyWith(
+      fullName: fullName,
+      username: username,
+      email: email,
+      phoneNumber: phoneNumber,
+      currency: currency,
+      avatarUrl: avatarUrl,
+      clearAvatar: clearAvatar,
+    );
+    _currentUser = updated;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_userKey, jsonEncode(updated.toJson()));
+    } catch (_) {}
+    notifyListeners();
+
+    final token = _token;
+    if (token != null) {
+      final body = <String, String>{};
+      if (fullName != null) body['full_name'] = fullName;
+      if (username != null) body['username'] = username;
+      if (email != null) body['email'] = email;
+      if (phoneNumber != null) body['phone_number'] = phoneNumber;
+      if (currency != null) body['currency'] = currency;
+      if (clearAvatar) {
+        body['avatar_url'] = '';
+      } else if (avatarUrl != null) {
+        body['avatar_url'] = avatarUrl;
+      }
+
+      final res = await _post('profile', body, token: token);
+      if (res != null) {
+        try {
+          final data = jsonDecode(res.body);
+          if (data is Map<String, dynamic> && data['user'] is Map<String, dynamic>) {
+            final serverUser = UserModel.fromJson(data['user'] as Map<String, dynamic>);
+            final finalUser = serverUser.copyWith(
+              avatarUrl: serverUser.avatarUrl ?? _currentUser.avatarUrl,
+            );
+            _currentUser = finalUser;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_userKey, jsonEncode(finalUser.toJson()));
+            notifyListeners();
+          }
+        } catch (_) {}
+      }
+    }
+    return true;
   }
 
   Future<http.Response?> _post(

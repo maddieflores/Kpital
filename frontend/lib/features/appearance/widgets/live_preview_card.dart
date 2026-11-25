@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/user_avatar.dart';
 import '../../auth/providers/auth_provider.dart';
 
 class LivePreviewCard extends StatelessWidget {
@@ -28,7 +29,6 @@ class LivePreviewCard extends StatelessWidget {
 
     final authProv = Provider.of<AuthProvider>(context, listen: false);
     final user = authProv.currentUser;
-    final initials = user.initials;
     final greetingName = user.fullName.trim().isNotEmpty
         ? user.fullName.trim().split(RegExp(r'\s+')).first
         : (user.username.trim().isNotEmpty && user.username != 'invitado'
@@ -59,17 +59,9 @@ class LivePreviewCard extends StatelessWidget {
           // Header del Mockup
           Row(
             children: [
-              CircleAvatar(
+              UserAvatar(
+                user: user,
                 radius: 16,
-                backgroundColor: isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.06),
-                child: Text(
-                  initials,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: textPrimary,
-                  ),
-                ),
               ),
               const SizedBox(width: 10),
               Expanded(

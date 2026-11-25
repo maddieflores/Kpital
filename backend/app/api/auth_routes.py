@@ -37,6 +37,15 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=12, max_length=128)
 
 
+class ProfileUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=1, max_length=150)
+    username: str | None = Field(default=None, min_length=1, max_length=50)
+    email: str | None = Field(default=None, min_length=3, max_length=255)
+    phone_number: str | None = Field(default=None, max_length=30)
+    currency: str | None = Field(default=None, pattern=r"^(BOB|USD|EUR|PEN|ARS)$")
+    avatar_url: str | None = Field(default=None)
+
+
 @contextmanager
 def database_cursor():
     database_url = os.getenv("DATABASE_URL")
@@ -88,7 +97,10 @@ def open_session(cursor, user):
         "INSERT INTO public.auth_sessions VALUES (%s, %s, now() + interval '12 hours')",
         (token_hash(token), user["id"]),
     )
-    return {"token": token, "user": {key: user[key] for key in USER_COLUMNS.split(", ")}}
+    user_dict = {key: user[key] for key in USER_COLUMNS.split(", ") if key in user}
+    if "avatar_url" in user and user["avatar_url"]:
+        user_dict["avatar_url"] = user["avatar_url"]
+    return {"token": token, "user": user_dict}
 
 
 def require_token(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)) -> str:
@@ -153,3 +165,74 @@ def change_password(request: PasswordChange, session: str = Depends(require_toke
             (new_password_hash(request.new_password), user["id"]),
         )
         cursor.execute("DELETE FROM public.auth_sessions WHERE user_id = %s AND token_hash <> %s", (user["id"], session))
+
+
+@router.post("/profile")
+def update_profile(request: ProfileUpdate, session: str = Depends(require_token)):
+    with database_cursor() as cursor:
+        cursor.execute(
+            """SELECT u.id FROM public.auth_sessions s
+               JOIN public.users u ON u.id = s.user_id
+               WHERE s.token_hash = %s AND s.expires_at > now() FOR UPDATE OF u""",
+            (session,),
+        )
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(401, "Sesión vencida. Inicia sesión nuevamente.")
+
+        updates = []
+        values = []
+        if request.full_name is not None and request.full_name.strip():
+            updates.append("full_name = %s")
+            values.append(request.full_name.strip())
+        if request.username is not None:
+            clean_username = re.sub(r"[^a-zA-Z0-9_\-]", "", request.username.strip())
+            if clean_username:
+                updates.append("username = %s")
+                values.append(clean_username)
+        if request.email is not None and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", request.email.strip().lower()):
+            updates.append("email = %s")
+            values.append(request.email.strip().lower())
+        if request.phone_number is not None:
+            updates.append("phone_number = %s")
+            values.append(request.phone_number.strip())
+        if request.currency is not None:
+            updates.append("currency = %s")
+            values.append(request.currency)
+
+        # Check if avatar_url column exists before adding it
+        if request.avatar_url is not None:
+            try:
+                cursor.execute(
+                    "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='avatar_url'"
+                )
+                if cursor.fetchone():
+                    updates.append("avatar_url = %s")
+                    values.append(request.avatar_url)
+            except Exception:
+                pass
+
+        if updates:
+            updates.append("updated_at = now()")
+            values.append(user["id"])
+            try:
+                set_clause = ", ".join(updates)
+                cursor.execute(f"UPDATE public.users SET {set_clause} WHERE id = %s", tuple(values))
+            except psycopg2.errors.UniqueViolation:
+                raise HTTPException(409, "Ese nombre de usuario o correo ya está en uso.")
+
+        # Return updated user
+        has_avatar = False
+        try:
+            cursor.execute(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='avatar_url'"
+            )
+            has_avatar = bool(cursor.fetchone())
+        except Exception:
+            pass
+
+        cols = USER_COLUMNS + (", avatar_url" if has_avatar else "")
+        cursor.execute(f"SELECT {cols} FROM public.users WHERE id = %s", (user["id"],))
+        updated_user = cursor.fetchone()
+        return {"status": "ok", "user": dict(updated_user)}
+
