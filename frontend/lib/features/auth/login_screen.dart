@@ -235,7 +235,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _emailPhoneController,
                 keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
-                  hintText: 'maddie o addelynie@gmail.com',
+                  hintText: 'ejemplo@correo.com',
                   hintStyle: const TextStyle(color: Color(0xFFB0A9BB)),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 18,
