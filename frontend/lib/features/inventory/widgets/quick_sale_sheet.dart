@@ -6,6 +6,7 @@ import '../../accounts/providers/accounts_provider.dart';
 import '../../transactions/providers/transactions_provider.dart';
 import '../models/product.dart';
 import '../providers/inventory_provider.dart';
+import 'create_batch_product_sheet.dart';
 
 class QuickSaleSheet extends StatefulWidget {
   final ProductModel? preselectedProduct;
@@ -125,6 +126,100 @@ class _QuickSaleSheetState extends State<QuickSaleSheet> {
     final inventoryProv = Provider.of<InventoryProvider>(context);
     final accountsProv = Provider.of<AccountsProvider>(context);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    if (inventoryProv.products.isEmpty) {
+      return Container(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: bottomInset + 24,
+        ),
+        decoration: BoxDecoration(
+          color: tokens.cardBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: tokens.textSecondary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.flash_on_rounded, color: Color(0xFF10B981), size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Venta Rápida',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: tokens.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded, color: tokens.textSecondary),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Icon(Icons.inventory_2_outlined, size: 56, color: tokens.textSecondary.withValues(alpha: 0.4)),
+            const SizedBox(height: 14),
+            Text(
+              'No tienes productos registrados',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: tokens.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Para registrar una venta rápida, primero registra un producto o lote en tu inventario para tener stock disponible.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: tokens.textSecondary),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                CreateBatchProductSheet.show(context);
+              },
+              icon: const Icon(Icons.add_box_rounded),
+              label: const Text('Registrar nuevo lote / producto'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     final currentProduct = inventoryProv.products.firstWhere(
       (p) => p.id == _selectedProductId,
