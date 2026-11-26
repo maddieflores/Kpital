@@ -247,7 +247,10 @@ class AuthProvider extends ChangeNotifier {
       await prefs.remove('kpital_bio_password');
     } catch (_) {}
     notifyListeners();
-    if (token != null) await _post('logout', {}, token: token);
+    if (token != null) {
+      // Notificar al backend en segundo plano sin congelar ni demorar la interfaz
+      _post('logout', {}, token: token).catchError((_) => null);
+    }
   }
 
   Future<bool> updatePassword(String currentPassword, String newPassword) async {

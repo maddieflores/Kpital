@@ -8,7 +8,7 @@ import '../accounts/screens/accounts_manager_screen.dart';
 import '../ads/providers/ads_provider.dart';
 import '../appearance/screens/appearance_screen.dart';
 import '../auth/providers/auth_provider.dart';
-import '../auth/login_screen.dart';
+import '../auth/welcome_screen.dart';
 import '../inventory/screens/inventory_screen.dart';
 import '../transactions/screens/expenses_analytics_screen.dart';
 import '../transactions/screens/transactions_screen.dart';
@@ -75,10 +75,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     if (shouldLogout == true && context.mounted) {
+      final navigator = Navigator.of(context);
       await authProv.logout();
-      if (!context.mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const WelcomeScreen()),
         (route) => false,
       );
     }
